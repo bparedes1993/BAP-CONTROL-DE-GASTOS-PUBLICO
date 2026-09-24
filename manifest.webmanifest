@@ -1,0 +1,1 @@
+{"name":"BAP Gastos · Control inteligente","short_name":"BAP Gastos","description":"Registra gastos y lee boletas desde tu celular o computadora","start_url":"./","scope":"./","display":"standalone","background_color":"#f5f7fb","theme_color":"#101b2b","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
