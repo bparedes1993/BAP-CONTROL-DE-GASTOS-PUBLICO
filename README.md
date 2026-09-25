@@ -35,3 +35,9 @@ Si `config.js` queda vacío, la aplicación continúa en modo local. El reposito
 ## Preparación para comercializar
 
 La publicación actual en GitHub Pages es para demostración y uso personal. Antes de ofrecer la aplicación como servicio comercial, migra el frontend a un alojamiento que admita ese uso, configura un SMTP propio para los enlaces de acceso y prueba el flujo de alta y sincronización con dos dispositivos reales. No hay cobros ni planes activos; los precios y límites requieren una implementación con validación en el servidor. Prepara aviso de privacidad, términos, contacto de soporte y un procedimiento para eliminar la cuenta y sus datos antes de invitar clientes.
+
+## Estado de publicación y privacidad
+
+`privacy.html` describe el tratamiento técnico de la versión piloto y enlaza el soporte. Falta identificar formalmente al responsable y revisar el aviso legal antes de aceptar clientes de pago. Para eliminar una cuenta en la versión piloto, la persona debe escribir al soporte y verificar titularidad; un administrador elimina el usuario en Supabase Auth, lo que elimina sus gastos de la nube mediante `ON DELETE CASCADE`. El usuario debe borrar por separado sus copias locales y respaldos descargados. Nunca incluir una clave administrativa en código público.
+
+La caché PWA consulta la red cuando hay conexión y conserva la última versión disponible para uso sin conexión. Para probar una versión nueva, recarga la página conectada.
