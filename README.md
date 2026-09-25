@@ -6,28 +6,32 @@ Aplicación web adaptable e instalable para registrar gastos desde celular y com
 
 - Fotografía de comprobantes desde la cámara del móvil o archivo del equipo.
 - Lectura OCR opcional de comercio, fecha y total con Tesseract.js (requiere internet; confirma los datos antes de guardar).
-- Registro de categoría, método de pago, notas y foto; resumen mensual y distribución por categoría.
-- Exportación del mes a PDF mediante la opción **Guardar como PDF** del navegador y archivo Excel XML `.xls` compatible con Excel.
+- Registro y edición de categoría, método de pago, notas y foto; resumen mensual y distribución por categoría.
+- Exportación del mes a PDF mediante la opción **Guardar como PDF** del navegador y archivo Excel real `.xlsx`.
 - Respaldo y restauración JSON de todos los gastos y fotos.
 - Datos en IndexedDB del navegador y recursos de la app almacenados para uso sin conexión después de la primera visita. OCR requiere conexión.
 
 ## Ejecutar localmente
 
-En la carpeta del proyecto, ejecutar `python -m http.server 8000` y abrir `http://localhost:8000`. En móvil, publicar en HTTPS (por ejemplo, GitHub Pages) para permitir instalación PWA y cámara. Abrir `index.html` directamente puede limitar el almacenamiento o la instalación.
+En la carpeta del proyecto, ejecutar `python -m http.server 8000` y abrir `http://localhost:8000`. En móvil, publicar en HTTPS (por ejemplo, un alojamiento HTTPS) para permitir instalación PWA y cámara. Abrir `index.html` directamente puede limitar el almacenamiento o la instalación.
 
 ## Privacidad y límites
 
-No hay servidor ni cuenta de usuario. Cada navegador o dispositivo mantiene sus propios gastos; los datos **no se sincronizan** automáticamente. Haz respaldo JSON regularmente y restáuralo en otro dispositivo cuando lo necesites. Borrar los datos del navegador elimina los registros locales. La lectura OCR descarga Tesseract.js y sus modelos desde servicios externos y procesa la imagen en el navegador; no se envía a un backend de BAP. La precisión varía con la fotografía. El PDF se produce mediante impresión del navegador. Esta versión no importa movimientos bancarios, no emite comprobantes ni se conecta a SUNAT.
+La aplicación usa una cuenta de correo para sincronizar gastos cuando Supabase está configurado. También conserva una copia local para trabajar sin conexión. Haz respaldo JSON regularmente. Borrar los datos del navegador elimina los registros locales. La lectura OCR descarga Tesseract.js y sus modelos desde servicios externos y procesa la imagen en el navegador; no se envía a un backend de BAP. La precisión varía con la fotografía. El PDF se produce mediante impresión del navegador. Esta versión no importa movimientos bancarios, no emite comprobantes ni se conecta a SUNAT.
 
 ## Sincronización automática (opcional)
 
 La aplicación incluye inicio de sesión por enlace al correo y sincronización en ambos sentidos. Para activarla:
 
-1. Crea un proyecto en Supabase. En **SQL Editor**, ejecuta el archivo `supabase.sql` una sola vez.
-2. Abre `config.js` y coloca **Project URL** y la **publishable key** pública (o la `anon` legada). **Nunca coloques una `service_role` o `secret key` en el navegador ni en GitHub.**
-3. Publica el sitio en una dirección HTTPS estable. En **Authentication > URL Configuration** del proyecto, configura esa dirección como Site URL y añade la misma ruta a Redirect URLs para los enlaces de acceso por correo. El inicio de sesión mediante enlace debe estar habilitado.
+1. El proyecto Supabase ya está creado. La tabla `expenses` y sus políticas de acceso por usuario ya están configuradas; `supabase.sql` documenta el esquema.
+2. `config.js` ya contiene la URL del proyecto y la clave publicable. **Nunca coloques una `service_role` o `secret key` en el navegador ni en GitHub.**
+3. El sitio está publicado en https://bparedes1993.github.io/BAP-CONTROL-DE-GASTOS-PUBLICO/ y esa misma ruta figura como Site URL y Redirect URL en Supabase. El proveedor Email está habilitado.
 4. Abre la aplicación en cada dispositivo, pulsa **Sincronización**, introduce el mismo correo y abre el enlace recibido. El primer dispositivo asociará sus registros locales a la cuenta y los subirá. El segundo descargará esos registros. Comprueba que aparecen en ambos antes de borrar datos locales.
 
-Los cambios pendientes se guardan localmente y se reintentan al volver internet, al volver a abrir la pestaña y cada 30 segundos mientras la app está abierta. Las eliminaciones se sincronizan mediante registros de borrado. Si dos dispositivos modifican el mismo registro a la vez, prevalece el cambio con la fecha de modificación más reciente. El inicio de sesión y la primera descarga requieren conexión. No uses perfiles compartidos entre distintas cuentas; conserva un respaldo antes de cambiar de cuenta. Las fotografías comprimidas se almacenan con el gasto en la base en línea; vigila el espacio del proyecto. En esta versión no se editan gastos existentes.
+Los cambios pendientes se guardan localmente y se reintentan al volver internet, al volver a abrir la pestaña y cada 30 segundos mientras la app está abierta. Las eliminaciones se sincronizan mediante registros de borrado. Si dos dispositivos modifican el mismo registro a la vez, prevalece el cambio con la fecha de modificación más reciente. El inicio de sesión y la primera descarga requieren conexión. No uses perfiles compartidos entre distintas cuentas; conserva un respaldo antes de cambiar de cuenta. Las fotografías comprimidas se almacenan con el gasto en la base en línea; vigila el espacio del proyecto. Los gastos existentes pueden editarse desde el botón **Editar** de cada movimiento.
 
-Si `config.js` queda vacío, la aplicación continúa en modo local. El repositorio es privado y **subir el código no publica automáticamente el sitio**. Para usarlo en dos dispositivos falta habilitar un hosting HTTPS y completar la configuración anterior. El modo en línea no se puede probar con credenciales de producción hasta disponer de un proyecto Supabase.
+Si `config.js` queda vacío, la aplicación continúa en modo local. El repositorio de publicación es público y GitHub Pages sirve la aplicación por HTTPS. La sincronización entre dos dispositivos debe comprobarse entrando con el mismo correo en ambos. Sin inicio de sesión, los datos en línea no se muestran. La clave publicable es visible por diseño; las reglas RLS protegen los datos de cada usuario.
+
+## Preparación para comercializar
+
+La publicación actual en GitHub Pages es para demostración y uso personal. Antes de ofrecer la aplicación como servicio comercial, migra el frontend a un alojamiento que admita ese uso, configura un SMTP propio para los enlaces de acceso y prueba el flujo de alta y sincronización con dos dispositivos reales. No hay cobros ni planes activos; los precios y límites requieren una implementación con validación en el servidor. Prepara aviso de privacidad, términos, contacto de soporte y un procedimiento para eliminar la cuenta y sus datos antes de invitar clientes.
