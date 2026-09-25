@@ -1,16 +1,16 @@
 # Preparación del despliegue de BAP Gastos
 
-Estado: piloto publicado en GitHub Pages. No habilitar cobros allí. La aplicación está en el repositorio público `bparedes1993/BAP-CONTROL-DE-GASTOS-PUBLICO`.
+Estado: piloto publicado en Cloudflare Workers en `https://bap-control-de-gastos-publico.brparedes1993.workers.dev/`. GitHub Pages sigue disponible como despliegue anterior. No habilitar cobros en GitHub Pages. La aplicación está en el repositorio público `bparedes1993/BAP-CONTROL-DE-GASTOS-PUBLICO`.
 
 ## 1. Alojamiento gratuito sin dominio comprado
 
-Crear una cuenta gratuita en Cloudflare y usar **Workers & Pages → Create → Pages → Connect to Git**. Conectar únicamente el repositorio público indicado. Configurar la rama `main`, **Framework preset: None**, **Build command: `exit 0`**, **Build output directory: `.`** (la raíz del repositorio). Confirmar el despliegue y copiar la URL real `https://<nombre>.pages.dev/`. La dirección `pages.dev` no requiere dominio propio. Antes de conceder acceso a GitHub, revisar el alcance de permisos de la instalación Cloudflare; seleccionar solamente este repositorio si la interfaz permite esa opción.
+Ya existe una cuenta de Cloudflare y una dirección funcional `workers.dev`. Si se quiere migrar específicamente a Cloudflare Pages, usar **Workers & Pages → Create → Pages → Connect to Git**. Conectar únicamente el repositorio público indicado. Configurar la rama `main`, **Framework preset: None**, **Build command: `exit 0`**, **Build output directory: `.`** (la raíz del repositorio). Confirmar el despliegue y copiar la URL real `https://<nombre>.pages.dev/`. La dirección `pages.dev` no requiere dominio propio. Antes de conceder acceso a GitHub, revisar el alcance de permisos de la instalación Cloudflare; seleccionar solamente este repositorio si la interfaz permite esa opción.
 
-No asumir un nombre `.pages.dev` antes de crearlo. Cuando funcione la nueva dirección, retirar el uso comercial del despliegue GitHub Pages y conservarlo solo para demostración si corresponde.
+No asumir un nombre `.pages.dev` antes de crearlo. El despliegue `workers.dev` existente no se convierte automáticamente en Pages. Cuando funcione la nueva dirección, retirar el uso comercial del despliegue GitHub Pages y conservarlo solo para demostración si corresponde.
 
 ## 2. Enlace de inicio de sesión
 
-En Supabase → proyecto BAP Gastos → Authentication → URL Configuration: colocar la URL exacta de Cloudflare como **Site URL** y agregarla a **Redirect URLs**, conservando temporalmente la URL anterior durante la transición. La ruta termina en `/`. Los enlaces de acceso se generan con la URL de la página donde el usuario pulsa el botón, por lo que la nueva dirección debe estar admitida antes de enviar pruebas.
+En Supabase → proyecto BAP Gastos → Authentication → URL Configuration, `https://bap-control-de-gastos-publico.brparedes1993.workers.dev/` ya figura como **Site URL** y **Redirect URL**. Se conserva temporalmente la URL anterior de GitHub Pages durante la transición. La ruta termina en `/`. Los enlaces de acceso se generan con la URL de la página donde el usuario pulsa el botón, por lo que la nueva dirección debe estar admitida antes de enviar pruebas.
 
 Supabase Auth sin SMTP propio permite entregar correos solo a direcciones preautorizadas del equipo del proyecto y tiene límites de prueba. Para invitar clientes hace falta un SMTP de producción. Los proveedores de envío suelen requerir verificar un dominio de remitente. No compartir la contraseña de Google ni claves SMTP en el chat, el repositorio o `config.js`.
 
@@ -36,3 +36,5 @@ Si no llega el enlace, revisar spam y los logs de Authentication en Supabase. Un
 - GitHub Pages: https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits
 - Cloudflare Pages/Git: https://developers.cloudflare.com/pages/get-started/git-integration/
 - Supabase SMTP: https://supabase.com/docs/guides/auth/auth-smtp
+
+Cloudflare describe `workers.dev` como una dirección para empezar y recomienda dominio propio para aplicaciones comerciales importantes: https://developers.cloudflare.com/workers/configuration/routing/workers-dev/
