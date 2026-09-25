@@ -4,3 +4,5 @@
 .account-body{padding:28px;min-width:min(90vw,440px)}.auth-label{display:flex;flex-direction:column;gap:8px;font-weight:700;font-size:12px;margin-bottom:14px}.auth-label input{border:1px solid #dce4eb;border-radius:9px;padding:12px}.auth-help{color:#8293a3;font-size:12px;line-height:1.5}#account-state{line-height:1.5}@media(max-width:700px){.topactions{flex-wrap:wrap}#account{order:3;width:100%}}
 
 .transaction .edit{border:0;background:#eaf3f0;color:#235b5c;border-radius:8px;padding:8px 10px;font-weight:700;font-size:12px}.transaction .edit:hover{background:#d7ebe4}@media(max-width:700px){.transaction .edit{padding:7px 8px}}
+
+.account-actions{display:flex;flex-direction:column;gap:9px;margin-top:12px}.danger{padding:11px 14px;background:#fff;border:1px solid #d9aaa8;color:#a53e3c;border-radius:10px;font-weight:700}.danger:hover{background:#fff2f2}
