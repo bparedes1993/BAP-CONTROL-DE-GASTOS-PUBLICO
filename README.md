@@ -47,3 +47,7 @@ La URL `workers.dev` sirve para validar el piloto; Cloudflare recomienda usar un
 ## Tiempo real
 
 La app escucha únicamente cambios de `expenses` filtrados por el ID de la cuenta; la lectura real continúa protegida por RLS. Para habilitar eventos de la tabla, ejecutar una sola vez `realtime.sql` en SQL Editor. Si falla la conexión WebSocket, la sincronización periódica continúa. No confundir una notificación en tiempo real con confirmación de entrega de cada modificación: la fuente de verdad sigue siendo la tabla.
+
+## Siguiente etapa comercial
+
+Consulta [ARQUITECTURA_Y_VENTA.md](ARQUITECTURA_Y_VENTA.md) para la separación de Gastos, Legal y Contable, los requisitos previos a la venta y las pruebas de salida del piloto.
