@@ -1,6 +1,12 @@
-# BAP Gastos
+# BAP Gastos y Finanzas
 
 Aplicación web adaptable e instalable para registrar gastos desde celular y computadora.
+
+## Finanzas personales
+
+Ingresos cobrados, tarjetas, deudas, préstamos otorgados, pagos/cobros con desglose, flujo de efectivo y distribución mensual de dinero. Incluye orientación de reducción de deuda, reserva e instrumentos de simulación con supuestos explícitos. Consulta [FINANZAS.md](FINANZAS.md) para registrar correctamente saldos base y movimientos.
+
+`finance.sql` documenta la migración de Supabase para los nuevos registros, sus políticas RLS y el enlace de compras a crédito.
 
 ## Funciones
 
