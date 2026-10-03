@@ -24,3 +24,5 @@ console.log('Financial scenarios: passed');
 assert.equal(analyze([entry('future','income',{date:'2026-10-20',amount:9000})],[],period,'2026-10-03').earned,0);
 assert.equal(analyze([card],[{date:'2026-10-20',amount:100,credit_id:'card'}],period,'2026-10-03').totalDebt,1000);
 const uuid='00000000-0000-4000-8000-000000000001';const {validRecord}=require('./finance-model');assert.equal(validRecord(entry(uuid,'income',{name:'Sueldo',date,amount:3000})),true);assert.equal(validRecord(entry(uuid,'income',{name:'Error',date:'2026-02-30',amount:3000})),false);assert.equal(validRecord(entry(uuid,'payment',{date,amount:100,principal:101,debt_id:uuid})),false);
+
+assert.equal(analyze([card,income],[],period,'2026-10-03').extra,0);assert.equal(analyze([card,income,settings,entry('unknown','payment',{date,amount:100,principal:null,debt_id:'card'})],[],period,'2026-10-03').extra,0);

@@ -24,7 +24,7 @@ No duplicar una compra en el saldo base y en los movimientos posteriores. Para c
 - Gastos: el mayor entre efectivo/débito registrado y presupuesto de efectivo/débito del mes.
 - Se descuentan pagos de deuda registrados, mínimos/cuotas aún pendientes y desembolsos de dinero prestado del mes.
 - Si existe déficit, no se propone ahorro ni abono adicional. Se muestran acciones para revisar gastos y consultar condiciones con acreedores.
-- Si falta una cuota o mínimo, se bloquea la distribución adicional. Si falta TEA, el orden de costo se etiqueta provisional. Si faltan vencimientos, se indica que no se pueden revisar todos los atrasos.
+- Si falta presupuesto, cuota, mínimo o desglose de capital pendiente de una deuda activa, se bloquea la distribución adicional. Si falta TEA y se eligió avalancha, también se bloquean abonos adicionales; se pueden completar las tasas o elegir bola de nieve para ordenar por saldo. Si faltan vencimientos, se indica que no se pueden revisar todos los atrasos.
 - La reserva mensual es la indicada por el usuario, limitada al excedente disponible. El remanente se divide según el porcentaje editable para abonos adicionales; los abonos no superan el saldo pendiente. El resto se muestra como ahorro/metas.
 - Avalancha ordena por TEA conocida, considerando primero atrasos; bola de nieve ordena por saldo. Son criterios orientativos: no comparan comisiones, distintas tasas por consumo, penalidades ni condiciones especiales.
 - La proyección de una deuda convierte la TEA a tasa efectiva mensual y supone cuota fija, abono extra fijo, sin compras nuevas ni comisiones. No usa TCEA como tasa de amortización. No es una fecha garantizada ni un cronograma del banco.
