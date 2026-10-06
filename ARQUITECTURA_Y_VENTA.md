@@ -1,6 +1,6 @@
 # Ruta de producto BAP: Gastos, Legal y Contable
 
-Estado al 26/09/2026: BAP Gastos es un piloto público, con sincronización y exportaciones. No hay pagos activos ni planes de suscripción implementados. BAP Legal y BAP Contable se diseñan como productos separados; este documento no afirma que estén desplegados.
+Estado al 06/10/2026: BAP Gastos es un piloto público con sincronización, exportaciones y módulo de acceso comercial implementado. El control obligatorio, rol inicial y SMTP necesitan activación y validación antes de vender; no hay cobro recurrente. Consultar COMERCIAL.md y SECURITY.md. BAP Legal y BAP Contable se diseñan como productos separados; este documento no afirma que estén desplegados.
 
 ## Una identidad de marca, datos separados
 
@@ -18,7 +18,7 @@ El plan gratuito de Supabase limita el número de proyectos activos en la organi
 
 1. **Piloto cerrado:** usar la dirección `workers.dev`, usuarios de prueba autorizados en Supabase Auth, respaldo JSON, PDF/Excel y pruebas reales en dos dispositivos. Medir entregabilidad de enlaces, tamaño de imágenes y cuotas. No anunciar sincronización instantánea garantizada; existe reintento cada 30 segundos.
 2. **Preventa:** definir responsable del tratamiento de datos, aviso de privacidad, términos, soporte y política de retención; habilitar correo de acceso con SMTP de producción y un remitente verificable. Valorar un dominio propio cuando haya clientes. No prometer precio fijo de infraestructura sin revisar cuotas y consumo.
-3. **Suscripciones:** elegir precios, periodo, comprobantes e impuestos aplicables con asesoría contable. Crear una tabla de suscripciones solo después de definir reglas. Validar cuotas y permisos mediante funciones o políticas en el servidor. La interfaz pública no puede ser la única autoridad para desbloquear un plan. Integrar un proveedor de cobro cuando exista demanda comprobada.
+3. **Suscripciones:** elegir precios, periodo, comprobantes e impuestos aplicables con asesoría contable. El módulo comercial ya incorpora planes, vigencias y pagos manuales con permisos y cuotas en servidor; ver COMERCIAL.md. Los precios iniciales están vacíos y el control obligatorio necesita activación. Integrar un proveedor de cobro cuando exista demanda comprobada.
 4. **Escala:** probar restauración de respaldos, monitorear fallos de acceso y sincronización, revisar políticas RLS y límites de almacenamiento. Separar entornos de prueba y producción antes de incorporar clientes de Legal o Contable.
 
 ## Criterios de salida del piloto

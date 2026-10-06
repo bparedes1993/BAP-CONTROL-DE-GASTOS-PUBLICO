@@ -49,3 +49,5 @@ La eliminación de la cuenta en la nube borra los registros de ambas tablas por 
 `node finance-model.test.js` verifica que no se dupliquen compras y pagos, que préstamos no inflen ingresos, que los cobros distingan capital/interés, que déficit/datos faltantes impidan asignaciones indebidas y que las proyecciones y validaciones respondan correctamente.
 
 Referencias educativas: https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/aprende-sobre-creditos y https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/el-sobrendeudamiento.
+
+Con control comercial activo, los cambios requieren una autorización vigente. Lectura y exportación propia se mantienen. Al restaurar una cuenta nueva, restaurar primero finanzas, esperar su sincronización y después gastos/fotos: el servidor comprueba la tarjeta vinculada.

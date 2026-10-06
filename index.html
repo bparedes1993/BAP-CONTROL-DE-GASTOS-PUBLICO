@@ -1,22 +1,647 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101b2b"><meta name="description" content="Control de gastos personal con lectura de comprobantes"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><title>BAP Gastos · Control inteligente</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="finance.css"></head><body>
-<div class="app"><aside class="sidebar"><div class="brand"><span class="mark">B</span><div><strong>BAP <span>Gastos</span></strong><small>CONTROL INTELIGENTE</small></div></div><nav><a href="#resumen" class="active">◫ <span>Resumen</span></a><a href="#movimientos">▤ <span>Movimientos</span></a><a href="#finanzas">◇ <span>Mis finanzas</span></a><a href="#reportes">◷ <span>Reportes</span></a></nav><div class="sidefoot"><span class="pulse"></span> Tus gastos, bajo tu control</div></aside><main><header class="topbar"><div><span class="eyebrow">FINANZAS PERSONALES</span><h1>Control financiero<span class="dot">.</span></h1><p>Tu dinero, tus metas y un plan para avanzar. <a class="demo-link" href="?demo=1#finanzas">Explorar ejemplo</a></p></div><div class="topactions"><button class="outline" id="account" type="button">☁ Sincronización</button><label class="month-picker">Período <input id="month" type="month"></label><button class="primary" id="add">＋ Nuevo gasto</button></div></header>
-<section id="resumen" class="hero"><div><span class="eyebrow light">TU RESUMEN DEL MES</span><div class="hero-amount" id="total">S/ 0.00</div><span id="count">0 movimientos registrados</span></div><div class="hero-decoration"><div class="orbit"></div><div class="orbit inner"></div><span>BAP</span></div></section>
-<section class="stats"><article class="stat"><div class="iconbox lavender">↗</div><span>Gasto promedio</span><strong id="average">S/ 0.00</strong><small>Por movimiento</small></article><article class="stat"><div class="iconbox mint">▦</div><span>Categoría principal</span><strong id="top-category">Sin datos</strong><small id="top-category-amount">Este mes</small></article><article class="stat"><div class="iconbox amber">◎</div><span>Comprobantes</span><strong id="receipt-count">0</strong><small>Con fotografía adjunta</small></article></section>
-<div class="columns"><section class="panel" id="movimientos"><div class="section-head"><div><span class="eyebrow">ACTIVIDAD</span><h2>Movimientos recientes</h2></div><button class="text-btn" id="add-inline">＋ Agregar</button></div><div id="transactions" class="transactions"></div></section><section class="panel category-panel"><div class="section-head"><div><span class="eyebrow">DISTRIBUCIÓN</span><h2>Por categoría</h2></div></div><div id="categories" class="categories"></div></section></div>
-<section id="finanzas" class="finance-area">
-<div class="finance-heading"><div><span class="eyebrow">TU PRÓXIMO PASO</span><h2>Construye tu equilibrio financiero.</h2><p>Ingresos, compromisos y un plan para usar mejor tu dinero.</p></div><span id="finance-sync" class="finance-sync" role="status">Cargando tus finanzas…</span></div>
-<div class="finance-tabs" role="tablist" aria-label="Finanzas"><button role="tab" aria-selected="true" data-fin-tab="plan">Mi plan</button><button role="tab" aria-selected="false" data-fin-tab="income">Ingresos</button><button role="tab" aria-selected="false" data-fin-tab="debts">Tarjetas y deudas</button><button role="tab" aria-selected="false" data-fin-tab="loans">Por cobrar</button></div>
-<div data-fin-panel="plan" role="tabpanel">
-<div id="finance-summary" class="finance-grid"></div>
-<div class="finance-layout"><section class="panel plan-panel"><div class="section-head"><div><span class="eyebrow">DISTRIBUCIÓN DEL MES</span><h2>Un destino para cada sol</h2></div><button class="text-btn" id="finance-settings">Ajustar presupuesto</button></div><div id="finance-plan"></div></section><section class="panel"><span class="eyebrow">DECISIONES CON CONTEXTO</span><h2>Tu guía financiera</h2><div id="finance-advice"></div></section></div>
-<section class="panel finance-bottom"><div class="section-head"><div><span class="eyebrow">SALIDAS Y ENTRADAS</span><h2>Flujo de efectivo del mes</h2></div></div><div id="finance-cash"></div><p class="finance-help">El flujo solo refleja movimientos registrados, no tu saldo bancario. Las compras a crédito se muestran en gastos y deuda; el efectivo sale cuando registras el pago. Las transferencias entre tus propias cuentas no son ingresos.</p></section>
-</div>
-<div data-fin-panel="income" role="tabpanel" hidden><section class="panel"><div class="section-head"><div><span class="eyebrow">DINERO GANADO</span><h2>Ingresos cobrados</h2></div><button class="primary" data-fin-add="income">＋ Registrar ingreso</button></div><p class="finance-help">Registra sueldo, ventas, servicios y otras entradas ganadas. Un préstamo recibido se registra en la deuda, no aquí.</p><div id="finance-incomes"></div></section></div>
-<div data-fin-panel="debts" role="tabpanel" hidden><section class="panel"><div class="section-head"><div><span class="eyebrow">TOMA EL CONTROL</span><h2>Tarjetas y préstamos recibidos</h2></div><button class="primary" data-fin-add="debt">＋ Agregar deuda</button></div><p class="finance-help">Usa un alias para identificar cada cuenta. Registra el saldo base y sus movimientos posteriores. No ingreses números completos de tarjeta, claves ni CVV.</p><div id="finance-debts" class="debt-grid"></div></section><section class="panel finance-bottom"><h2>Pagos y desembolsos registrados</h2><div id="finance-debt-events"></div></section></div>
-<div data-fin-panel="loans" role="tabpanel" hidden><section class="panel"><div class="section-head"><div><span class="eyebrow">DINERO POR RECUPERAR</span><h2>Préstamos que otorgaste</h2></div><button class="primary" data-fin-add="receivable">＋ Agregar por cobrar</button></div><p class="finance-help">El saldo pendiente no es dinero disponible. Registra el cobro cuando realmente lo recibas.</p><div id="finance-receivables" class="debt-grid"></div></section><section class="panel finance-bottom"><h2>Cobros y entregas registrados</h2><div id="finance-loan-events"></div></section></div>
-<div class="finance-tools"><button class="outline" id="finance-pdf">↓ Plan PDF</button><button class="outline" id="finance-excel">↓ Finanzas Excel</button><button class="outline" id="finance-backup">↓ Respaldo financiero</button><label class="outline upload">↑ Restaurar finanzas<input id="finance-restore" type="file" accept="application/json,.json" hidden></label></div>
-<p class="finance-help">Orientación automática a partir de tus registros. Comprueba los importes y condiciones de cada entidad; el cálculo no sustituye un estado de cuenta ni ejecuta pagos. <a href="https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/aprende-sobre-creditos" target="_blank" rel="noopener">Información de la SBS sobre créditos</a>.</p>
-</section>
-<dialog id="finance-editor"><form id="finance-form"><div class="dialog-top"><div><span class="eyebrow">BAP FINANZAS</span><h2 id="finance-title"></h2></div><button type="button" class="close" id="finance-close" aria-label="Cerrar registro financiero">×</button></div><div id="finance-fields" class="formgrid"></div><p id="finance-form-help" class="finance-help"></p><div id="finance-error" class="finance-error" role="alert"></div><div class="dialog-actions"><button type="button" class="outline" id="finance-cancel">Cancelar</button><button type="submit" class="primary" id="finance-save">Guardar registro</button></div></form></dialog>
-<section class="panel exports" id="reportes"><div><span class="eyebrow">TUS DATOS, A TU MANERA</span><h2>Reportes y respaldos</h2><p>Descarga los gastos del período o respalda tus gastos y fotos. Los registros financieros tienen sus propios reportes y respaldo en Mis finanzas.</p></div><div class="export-actions"><button id="pdf" class="outline">↓ Reporte PDF</button><button id="excel" class="outline">↓ Excel (.xlsx)</button><button id="backup" class="outline">↓ Respaldo JSON</button><label class="outline upload">↑ Restaurar JSON<input type="file" id="restore" accept="application/json,.json" hidden></label></div></section><footer id="sync-foot">BAP Gastos · <a href="privacy.html">Datos y privacidad</a> · Haz respaldos periódicos de tus datos.</footer></main></div>
-<dialog id="account-dialog"><div class="account-body"><div class="dialog-top"><div><span class="eyebrow">BAP EN TUS DISPOSITIVOS</span><h2>Sincronización</h2><p id="account-state">Inicia sesión para sincronizar tus gastos.</p></div><button type="button" id="account-close" class="close" aria-label="Cerrar">×</button></div><div id="auth-form"><label class="auth-label">Correo electrónico<input id="auth-email" type="email" autocomplete="email" placeholder="tu@correo.com"></label><button class="primary" id="send-link" type="button">Enviar enlace de acceso</button><p class="auth-help">Abre el enlace que recibirás en tu correo. Usa la misma cuenta en el celular y la computadora.</p></div><div class="account-actions"><button class="outline" id="sign-out" type="button" hidden>Cerrar sesión</button><button class="danger" id="delete-account" type="button" hidden>Eliminar mi cuenta y datos en línea</button></div></div></dialog><dialog id="editor"><form method="dialog" id="expense-form"><div class="dialog-top"><div><span class="eyebrow" id="editor-eyebrow">NUEVO REGISTRO</span><h2 id="editor-title">Agrega un gasto</h2><p>Toma una foto de la boleta o ingresa los datos.</p></div><button type="button" id="close" class="close" aria-label="Cerrar">×</button></div><label class="photo-box" for="photo"><span>◎</span><strong id="photo-title">Fotografiar o subir boleta</strong><small id="photo-subtitle">JPG, PNG o HEIC si tu navegador lo admite</small><input type="file" id="photo" accept="image/*" capture="environment" hidden></label><div class="scan-row"><button type="button" id="scan" class="outline" disabled>✧ Leer boleta automáticamente</button><span id="scan-state">La lectura necesita conexión a internet.</span></div><div class="formgrid"><label>Fecha<input id="date" type="date" required></label><label>Monto (S/)<input id="amount" type="number" min="0.01" step="0.01" placeholder="0.00" required></label><label class="wide">Comercio / descripción<input id="merchant" maxlength="100" placeholder="Ej. Supermercado" required></label><label>Categoría<select id="category"><option>Alimentación</option><option>Transporte</option><option>Hogar</option><option>Salud</option><option>Educación</option><option>Servicios</option><option>Ocio</option><option>Otros</option></select></label><label>Método de pago<select id="payment"><option>Tarjeta</option><option>Efectivo</option><option>Yape / Plin</option><option>Transferencia</option><option>Otro</option></select></label><label class="wide">Origen del pago<select id="expense-credit"><option value="">Efectivo / débito / transferencia</option></select><small>Si eliges crédito, la compra aumenta esa deuda y el efectivo sale al registrar el pago.</small></label><label class="wide">Nota (opcional)<input id="note" maxlength="200" placeholder="Detalles para recordar este gasto"></label></div><div class="dialog-actions"><button type="button" id="cancel" class="outline">Cancelar</button><button class="primary" type="submit" id="save-expense">Guardar gasto</button></div></form></dialog><div id="toast" role="status" aria-live="polite"></div><script src="config.js" defer></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" defer></script><script src="xlsx.js" defer></script><script src="finance-model.js" defer></script><script src="app.js" defer></script><script src="finance.js" defer></script></body></html>
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101b2b" />
+    <meta
+      name="description"
+      content="Control de gastos personal con lectura de comprobantes"
+    />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <title>BAP Gastos · Control inteligente</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="finance.css" />
+    <link rel="stylesheet" href="commercial.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="mark">B</span>
+          <div>
+            <strong>BAP <span>Gastos</span></strong
+            ><small>CONTROL INTELIGENTE</small>
+          </div>
+        </div>
+        <nav>
+          <a href="#mi-acceso">○ <span>Mi acceso</span></a
+          ><a href="#commercial-admin" id="access-admin-link" hidden
+            >⚙ <span>Administración</span></a
+          ><a href="#resumen" class="active">◫ <span>Resumen</span></a
+          ><a href="#movimientos">▤ <span>Movimientos</span></a
+          ><a href="#finanzas">◇ <span>Mis finanzas</span></a
+          ><a href="#reportes">◷ <span>Reportes</span></a>
+        </nav>
+        <div class="sidefoot">
+          <span class="pulse"></span> Tus gastos, bajo tu control
+        </div>
+      </aside>
+      <main>
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">FINANZAS PERSONALES</span>
+            <h1>Control financiero<span class="dot">.</span></h1>
+            <p>
+              Tu dinero, tus metas y un plan para avanzar.
+              <a class="demo-link" href="?demo=1#finanzas">Explorar ejemplo</a>
+            </p>
+          </div>
+          <div class="topactions">
+            <button class="outline" id="account" type="button">
+              ☁ Sincronización</button
+            ><label class="month-picker"
+              >Período <input id="month" type="month" /></label
+            ><button class="primary" id="add">＋ Nuevo gasto</button>
+          </div>
+        </header>
+        <section id="mi-acceso" class="commercial-area panel">
+          <div id="access-demo" class="access-demo" hidden>
+            Demostración comercial con datos ficticios. Los botones no aprueban
+            clientes ni registran pagos reales.
+          </div>
+          <div class="commercial-intro">
+            <div>
+              <span class="eyebrow">TU CUENTA BAP</span>
+              <h2>Tu plan, con claridad.</h2>
+              <p>
+                Consulta tu vigencia, solicita acceso y conserva el control de
+                tus datos.
+              </p>
+            </div>
+            <button id="access-refresh" class="outline" type="button">
+              Actualizar estado
+            </button>
+          </div>
+          <div id="access-status" class="access-card" role="status"></div>
+          <button id="access-login" class="primary" type="button">
+            Verificar mi correo
+          </button>
+          <form id="access-request" class="access-request" hidden>
+            <label
+              >Plan que deseas solicitar<select
+                id="requested-plan"
+                required
+              ></select></label
+            ><button id="request-access" class="primary" type="submit">
+              Solicitar acceso
+            </button>
+          </form>
+          <div id="access-payments"></div>
+          <p class="commercial-help">
+            La solicitud no activa una suscripción ni cobra automáticamente. BAP
+            confirma el acceso después de acordar las condiciones y revisar el
+            pago, cuando corresponda.
+            <a href="https://wa.me/51904170143">Contactar a BAP</a>.
+          </p>
+          <section id="commercial-admin" class="commercial-admin" hidden>
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">ADMINISTRACIÓN BAP</span>
+                <h2>Clientes y autorizaciones</h2>
+              </div>
+              <button id="admin-load" class="outline" type="button">
+                Cargar solicitudes
+              </button>
+            </div>
+            <p id="admin-warning" class="commercial-note"></p>
+            <div id="admin-mfa">
+              <h3>Protege tu administración</h3>
+              <p class="commercial-help">
+                Para administrar, configura o verifica tu segundo factor con una
+                aplicación autenticadora. Nunca compartas la clave ni el código.
+              </p>
+              <button id="mfa-start" class="outline" type="button">
+                Configurar / verificar segundo factor
+              </button>
+              <form id="mfa-verify" hidden>
+                <img
+                  id="mfa-qr"
+                  class="mfa-image"
+                  alt="Código QR para configurar tu autenticador"
+                  hidden
+                />
+                <p id="mfa-secret" class="mfa-secret"></p>
+                <label
+                  >Código de 6 dígitos<input
+                    id="mfa-code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxlength="6"
+                    required /></label
+                ><button id="mfa-confirm" class="primary" type="submit">
+                  Verificar código
+                </button>
+              </form>
+            </div>
+            <div id="admin-controls" hidden>
+              <form id="admin-search-form" class="admin-search">
+                <input
+                  id="admin-search"
+                  type="search"
+                  placeholder="Buscar correo de cliente"
+                  aria-label="Buscar correo de cliente"
+                  maxlength="100"
+                /><button class="outline" type="submit">Buscar</button>
+              </form>
+              <div id="admin-clients"></div>
+              <div class="admin-pagination">
+                <button id="admin-prev" class="outline" type="button">
+                  Anterior</button
+                ><button id="admin-next" class="outline" type="button">
+                  Siguiente
+                </button>
+              </div>
+              <h3>Planes y precios</h3>
+              <p class="commercial-help">
+                Los precios se acuerdan desde aquí; no son cargos automáticos.
+                Cada renovación aplica los días que confirmes, sin alterar
+                vigencias existentes al editar un plan.
+              </p>
+              <div id="admin-plans" class="commercial-plans"></div>
+              <h3>Control comercial</h3>
+              <button id="enforce-commercial" class="primary" type="button">
+                Activar control obligatorio
+              </button>
+              <h3>Decisiones recientes</h3>
+              <div id="admin-audit"></div>
+              <p class="commercial-help">
+                La administración muestra solicitudes y decisiones comerciales.
+                No permite leer los gastos o finanzas personales de los
+                clientes. Preparar un correo abre tu aplicación de correo: no lo
+                envía automáticamente.
+              </p>
+            </div>
+          </section>
+        </section>
+        <section id="resumen" class="hero">
+          <div>
+            <span class="eyebrow light">TU RESUMEN DEL MES</span>
+            <div class="hero-amount" id="total">S/ 0.00</div>
+            <span id="count">0 movimientos registrados</span>
+          </div>
+          <div class="hero-decoration">
+            <div class="orbit"></div>
+            <div class="orbit inner"></div>
+            <span>BAP</span>
+          </div>
+        </section>
+        <section class="stats">
+          <article class="stat">
+            <div class="iconbox lavender">↗</div>
+            <span>Gasto promedio</span><strong id="average">S/ 0.00</strong
+            ><small>Por movimiento</small>
+          </article>
+          <article class="stat">
+            <div class="iconbox mint">▦</div>
+            <span>Categoría principal</span
+            ><strong id="top-category">Sin datos</strong
+            ><small id="top-category-amount">Este mes</small>
+          </article>
+          <article class="stat">
+            <div class="iconbox amber">◎</div>
+            <span>Comprobantes</span><strong id="receipt-count">0</strong
+            ><small>Con fotografía adjunta</small>
+          </article>
+        </section>
+        <div class="columns">
+          <section class="panel" id="movimientos">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">ACTIVIDAD</span>
+                <h2>Movimientos recientes</h2>
+              </div>
+              <button class="text-btn" id="add-inline">＋ Agregar</button>
+            </div>
+            <div id="transactions" class="transactions"></div>
+          </section>
+          <section class="panel category-panel">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">DISTRIBUCIÓN</span>
+                <h2>Por categoría</h2>
+              </div>
+            </div>
+            <div id="categories" class="categories"></div>
+          </section>
+        </div>
+        <section id="finanzas" class="finance-area">
+          <div class="finance-heading">
+            <div>
+              <span class="eyebrow">TU PRÓXIMO PASO</span>
+              <h2>Construye tu equilibrio financiero.</h2>
+              <p>Ingresos, compromisos y un plan para usar mejor tu dinero.</p>
+            </div>
+            <span id="finance-sync" class="finance-sync" role="status"
+              >Cargando tus finanzas…</span
+            >
+          </div>
+          <div class="finance-tabs" role="tablist" aria-label="Finanzas">
+            <button role="tab" aria-selected="true" data-fin-tab="plan">
+              Mi plan</button
+            ><button role="tab" aria-selected="false" data-fin-tab="income">
+              Ingresos</button
+            ><button role="tab" aria-selected="false" data-fin-tab="debts">
+              Tarjetas y deudas</button
+            ><button role="tab" aria-selected="false" data-fin-tab="loans">
+              Por cobrar
+            </button>
+          </div>
+          <div data-fin-panel="plan" role="tabpanel">
+            <div id="finance-summary" class="finance-grid"></div>
+            <div class="finance-layout">
+              <section class="panel plan-panel">
+                <div class="section-head">
+                  <div>
+                    <span class="eyebrow">DISTRIBUCIÓN DEL MES</span>
+                    <h2>Un destino para cada sol</h2>
+                  </div>
+                  <button class="text-btn" id="finance-settings">
+                    Ajustar presupuesto
+                  </button>
+                </div>
+                <div id="finance-plan"></div>
+              </section>
+              <section class="panel">
+                <span class="eyebrow">DECISIONES CON CONTEXTO</span>
+                <h2>Tu guía financiera</h2>
+                <div id="finance-advice"></div>
+              </section>
+            </div>
+            <section class="panel finance-bottom">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">SALIDAS Y ENTRADAS</span>
+                  <h2>Flujo de efectivo del mes</h2>
+                </div>
+              </div>
+              <div id="finance-cash"></div>
+              <p class="finance-help">
+                El flujo solo refleja movimientos registrados, no tu saldo
+                bancario. Las compras a crédito se muestran en gastos y deuda;
+                el efectivo sale cuando registras el pago. Las transferencias
+                entre tus propias cuentas no son ingresos.
+              </p>
+            </section>
+          </div>
+          <div data-fin-panel="income" role="tabpanel" hidden>
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">DINERO GANADO</span>
+                  <h2>Ingresos cobrados</h2>
+                </div>
+                <button class="primary" data-fin-add="income">
+                  ＋ Registrar ingreso
+                </button>
+              </div>
+              <p class="finance-help">
+                Registra sueldo, ventas, servicios y otras entradas ganadas. Un
+                préstamo recibido se registra en la deuda, no aquí.
+              </p>
+              <div id="finance-incomes"></div>
+            </section>
+          </div>
+          <div data-fin-panel="debts" role="tabpanel" hidden>
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">TOMA EL CONTROL</span>
+                  <h2>Tarjetas y préstamos recibidos</h2>
+                </div>
+                <button class="primary" data-fin-add="debt">
+                  ＋ Agregar deuda
+                </button>
+              </div>
+              <p class="finance-help">
+                Usa un alias para identificar cada cuenta. Registra el saldo
+                base y sus movimientos posteriores. No ingreses números
+                completos de tarjeta, claves ni CVV.
+              </p>
+              <div id="finance-debts" class="debt-grid"></div>
+            </section>
+            <section class="panel finance-bottom">
+              <h2>Pagos y desembolsos registrados</h2>
+              <div id="finance-debt-events"></div>
+            </section>
+          </div>
+          <div data-fin-panel="loans" role="tabpanel" hidden>
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">DINERO POR RECUPERAR</span>
+                  <h2>Préstamos que otorgaste</h2>
+                </div>
+                <button class="primary" data-fin-add="receivable">
+                  ＋ Agregar por cobrar
+                </button>
+              </div>
+              <p class="finance-help">
+                El saldo pendiente no es dinero disponible. Registra el cobro
+                cuando realmente lo recibas.
+              </p>
+              <div id="finance-receivables" class="debt-grid"></div>
+            </section>
+            <section class="panel finance-bottom">
+              <h2>Cobros y entregas registrados</h2>
+              <div id="finance-loan-events"></div>
+            </section>
+          </div>
+          <div class="finance-tools">
+            <button class="outline" id="finance-pdf">↓ Plan PDF</button
+            ><button class="outline" id="finance-excel">↓ Finanzas Excel</button
+            ><button class="outline" id="finance-backup">
+              ↓ Respaldo financiero</button
+            ><label class="outline upload"
+              >↑ Restaurar finanzas<input
+                id="finance-restore"
+                type="file"
+                accept="application/json,.json"
+                hidden
+            /></label>
+          </div>
+          <p class="finance-help">
+            Orientación automática a partir de tus registros. Comprueba los
+            importes y condiciones de cada entidad; el cálculo no sustituye un
+            estado de cuenta ni ejecuta pagos.
+            <a
+              href="https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/aprende-sobre-creditos"
+              target="_blank"
+              rel="noopener"
+              >Información de la SBS sobre créditos</a
+            >.
+          </p>
+        </section>
+        <dialog id="finance-editor">
+          <form id="finance-form">
+            <div class="dialog-top">
+              <div>
+                <span class="eyebrow">BAP FINANZAS</span>
+                <h2 id="finance-title"></h2>
+              </div>
+              <button
+                type="button"
+                class="close"
+                id="finance-close"
+                aria-label="Cerrar registro financiero"
+              >
+                ×
+              </button>
+            </div>
+            <div id="finance-fields" class="formgrid"></div>
+            <p id="finance-form-help" class="finance-help"></p>
+            <div id="finance-error" class="finance-error" role="alert"></div>
+            <div class="dialog-actions">
+              <button type="button" class="outline" id="finance-cancel">
+                Cancelar</button
+              ><button type="submit" class="primary" id="finance-save">
+                Guardar registro
+              </button>
+            </div>
+          </form>
+        </dialog>
+        <section class="panel exports" id="reportes">
+          <div>
+            <span class="eyebrow">TUS DATOS, A TU MANERA</span>
+            <h2>Reportes y respaldos</h2>
+            <p>
+              Descarga los gastos del período o respalda tus gastos y fotos. Los
+              registros financieros tienen sus propios reportes y respaldo en
+              Mis finanzas.
+            </p>
+          </div>
+          <div class="export-actions">
+            <button id="pdf" class="outline">↓ Reporte PDF</button
+            ><button id="excel" class="outline">↓ Excel (.xlsx)</button
+            ><button id="backup" class="outline">↓ Respaldo JSON</button
+            ><label class="outline upload"
+              >↑ Restaurar JSON<input
+                type="file"
+                id="restore"
+                accept="application/json,.json"
+                hidden
+            /></label>
+          </div>
+        </section>
+        <footer id="sync-foot">
+          BAP Gastos · <a href="privacy.html">Datos y privacidad</a> · Haz
+          respaldos periódicos de tus datos.
+        </footer>
+      </main>
+    </div>
+    <dialog id="decision-dialog">
+      <div class="account-body">
+        <div class="dialog-top">
+          <div>
+            <span class="eyebrow">AUTORIZACIÓN DE CLIENTE</span>
+            <h2>Gestionar acceso</h2>
+            <p id="decision-client"></p>
+          </div>
+          <button
+            id="decision-close"
+            class="close"
+            type="button"
+            aria-label="Cerrar autorización"
+          >
+            ×
+          </button>
+        </div>
+        <form id="decision-form">
+          <div class="formgrid">
+            <label
+              >Decisión<select id="decision-status">
+                <option value="active">Aprobar / renovar</option>
+                <option value="suspended">Suspender</option>
+                <option value="rejected">No aprobar</option>
+              </select></label
+            ><label>Plan<select id="decision-plan" required></select></label
+            ><label
+              >Días a agregar<input
+                id="decision-days"
+                type="number"
+                min="1"
+                max="730"
+                step="1"
+                required /></label
+            ><label
+              >Pago recibido S/ (0: sin pago)<input
+                id="decision-amount"
+                type="number"
+                min="0"
+                max="100000"
+                step="0.01"
+                value="0" /></label
+            ><label
+              >Medio de pago<select id="decision-method">
+                <option value="transfer">Transferencia</option>
+                <option value="yape">Yape</option>
+                <option value="plin">Plin</option>
+                <option value="cash">Efectivo</option>
+                <option value="other">Otro</option>
+              </select></label
+            ><label
+              >Referencia única del pago<input
+                id="decision-reference"
+                maxlength="100"
+                placeholder="Obligatoria si hay pago"
+            /></label>
+          </div>
+          <p class="commercial-help">
+            Confirma el pago en tu cuenta antes de registrarlo. Esta acción no
+            transfiere dinero ni emite comprobantes. Al renovar una autorización
+            activa, los días se agregan al vencimiento actual.
+          </p>
+          <p id="decision-error" class="finance-error" role="alert"></p>
+          <div class="dialog-actions">
+            <button id="decision-save" class="primary" type="submit">
+              Guardar decisión
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+    <dialog id="account-dialog">
+      <div class="account-body">
+        <div class="dialog-top">
+          <div>
+            <span class="eyebrow">BAP EN TUS DISPOSITIVOS</span>
+            <h2>Tu cuenta y acceso</h2>
+            <p id="account-state">Inicia sesión para sincronizar tus gastos.</p>
+          </div>
+          <button
+            type="button"
+            id="account-close"
+            class="close"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
+        </div>
+        <div id="auth-form">
+          <label class="auth-label"
+            >Correo electrónico<input
+              id="auth-email"
+              type="email"
+              autocomplete="email"
+              placeholder="tu@correo.com" /></label
+          ><button class="primary" id="send-link" type="button">
+            Enviar enlace de acceso
+          </button>
+          <p class="auth-help">
+            El enlace verifica tu correo. Después podrás solicitar un plan en Mi
+            acceso. Usa la misma cuenta en ambos dispositivos. El envío a
+            clientes requiere el correo de producción de BAP.
+          </p>
+        </div>
+        <div class="account-actions">
+          <button class="outline" id="sign-out" type="button" hidden>
+            Cerrar sesión</button
+          ><button class="danger" id="delete-account" type="button" hidden>
+            Eliminar mi cuenta y datos en línea
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="editor">
+      <form method="dialog" id="expense-form">
+        <div class="dialog-top">
+          <div>
+            <span class="eyebrow" id="editor-eyebrow">NUEVO REGISTRO</span>
+            <h2 id="editor-title">Agrega un gasto</h2>
+            <p>Toma una foto de la boleta o ingresa los datos.</p>
+          </div>
+          <button type="button" id="close" class="close" aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <label class="photo-box" for="photo"
+          ><span>◎</span
+          ><strong id="photo-title">Fotografiar o subir boleta</strong
+          ><small id="photo-subtitle"
+            >JPG, PNG o HEIC si tu navegador lo admite</small
+          ><input
+            type="file"
+            id="photo"
+            accept="image/*"
+            capture="environment"
+            hidden
+        /></label>
+        <div class="scan-row">
+          <button type="button" id="scan" class="outline" disabled>
+            ✧ Leer boleta automáticamente</button
+          ><span id="scan-state">La lectura necesita conexión a internet.</span>
+        </div>
+        <div class="formgrid">
+          <label>Fecha<input id="date" type="date" required /></label
+          ><label
+            >Monto (S/)<input
+              id="amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="0.00"
+              required /></label
+          ><label class="wide"
+            >Comercio / descripción<input
+              id="merchant"
+              maxlength="100"
+              placeholder="Ej. Supermercado"
+              required /></label
+          ><label
+            >Categoría<select id="category">
+              <option>Alimentación</option>
+              <option>Transporte</option>
+              <option>Hogar</option>
+              <option>Salud</option>
+              <option>Educación</option>
+              <option>Servicios</option>
+              <option>Ocio</option>
+              <option>Otros</option>
+            </select></label
+          ><label
+            >Método de pago<select id="payment">
+              <option>Tarjeta</option>
+              <option>Efectivo</option>
+              <option>Yape / Plin</option>
+              <option>Transferencia</option>
+              <option>Otro</option>
+            </select></label
+          ><label class="wide"
+            >Origen del pago<select id="expense-credit">
+              <option value="">
+                Efectivo / débito / transferencia
+              </option></select
+            ><small
+              >Si eliges crédito, la compra aumenta esa deuda y el efectivo sale
+              al registrar el pago.</small
+            ></label
+          ><label class="wide"
+            >Nota (opcional)<input
+              id="note"
+              maxlength="200"
+              placeholder="Detalles para recordar este gasto"
+          /></label>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel" class="outline">Cancelar</button
+          ><button class="primary" type="submit" id="save-expense">
+            Guardar gasto
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="config.js" defer></script>
+    <script src="supabase-client.js" defer></script>
+    <script src="xlsx.js" defer></script>
+    <script src="finance-model.js" defer></script>
+    <script src="commercial.js" defer></script>
+    <script src="app.js" defer></script>
+    <script src="finance.js" defer></script>
+  </body>
+</html>

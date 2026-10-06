@@ -1,45 +1,881 @@
-'use strict';
-const demoMode=new URLSearchParams(location.search).get('demo')==='1';
-const $=s=>document.querySelector(s);const money=n=>new Intl.NumberFormat('es-PE',{style:'currency',currency:'PEN'}).format(Number(n)||0);
-const today=()=>new Date().toLocaleDateString('en-CA');const colors=['#72aaa4','#a58ec9','#e5ad65','#7394cd','#a9bf77','#d38c91','#9ab5c8','#8894a7'];
-let db, photoData='', editingId=null, expenses=[], cloud=null, cloudUser=null, syncing=false, cloudReady=false, realtimeChannel=null, realtimeTimer=null;
-function notice(s){const el=$('#toast');el.textContent=s;el.classList.add('show');clearTimeout(el.timer);el.timer=setTimeout(()=>el.classList.remove('show'),3500)}
-function openDB(){return new Promise((resolve,reject)=>{const q=indexedDB.open(demoMode?'bap-gastos-demo-v1':'bap-gastos-v1',1);q.onupgradeneeded=()=>q.result.createObjectStore('expenses',{keyPath:'id'});q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
-function all(){return new Promise((resolve,reject)=>{const q=db.transaction('expenses').objectStore('expenses').getAll();q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
-function put(item){return new Promise((resolve,reject)=>{const q=db.transaction('expenses','readwrite').objectStore('expenses').put(item);q.onsuccess=resolve;q.onerror=()=>reject(q.error)})}
-function remove(id){return new Promise((resolve,reject)=>{const q=db.transaction('expenses','readwrite').objectStore('expenses').delete(id);q.onsuccess=resolve;q.onerror=()=>reject(q.error)})}
-function current(){return expenses.filter(e=>!e.deleted&&(!cloudReady||e.owner_id===cloudUser?.id)&&e.date.slice(0,7)===$('#month').value).sort((a,b)=>b.date.localeCompare(a.date)||b.created.localeCompare(a.created))}
-function safe(t){return String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function render(){let rows=current(),total=rows.reduce((a,e)=>a+Number(e.amount),0),categories={};rows.forEach(e=>categories[e.category]=(categories[e.category]||0)+Number(e.amount));let sorted=Object.entries(categories).sort((a,b)=>b[1]-a[1]);$('#total').textContent=money(total);$('#count').textContent=`${rows.length} movimiento${rows.length===1?'':'s'} registrado${rows.length===1?'':'s'}`;$('#average').textContent=money(rows.length?total/rows.length:0);$('#top-category').textContent=sorted[0]?.[0]||'Sin datos';$('#top-category-amount').textContent=sorted.length?money(sorted[0][1]):'Este mes';$('#receipt-count').textContent=rows.filter(e=>e.photo).length;$('#transactions').innerHTML=rows.length?rows.map(e=>`<div class="transaction"><div class="transaction-icon">${e.photo?'▧':'◈'}</div><div class="transaction-main"><strong>${safe(e.merchant)}</strong><small>${safe(e.category)} · ${safe(e.date)} · ${safe(e.payment)}</small></div><span class="transaction-amount">${money(e.amount)}</span><button class="edit" data-id="${safe(e.id)}" title="Editar gasto" aria-label="Editar gasto">Editar</button><button class="delete" data-id="${safe(e.id)}" title="Eliminar gasto" aria-label="Eliminar gasto">×</button></div>`).join(''):'<div class="empty">Aún no tienes gastos registrados este mes.<br>Agrega tu primer comprobante para empezar.</div>';$('#categories').innerHTML=sorted.length?sorted.map(([name,sum],i)=>`<div><div class="cat-head"><span>${safe(name)}</span><span>${money(sum)} · ${Math.round(sum/total*100)}%</span></div><div class="track"><span style="width:${sum/total*100}%;background:${colors[i%colors.length]}"></span></div></div>`).join(''):'<div class="empty">Tus categorías aparecerán aquí.</div>';window.dispatchEvent(new Event('bap:render'))}
-function show(item=null){if(cloudReady&&!cloudUser){$('#account-dialog').showModal();notice('Inicia sesión para registrar gastos sincronizados.');return}editingId=item?.id||null;photoData=item?.photo||'';$('#expense-form').reset();$('#expense-credit').value=item?.credit_id||'';$('#editor-title').textContent=item?'Editar gasto':'Agrega un gasto';$('#editor-eyebrow').textContent=item?'EDITAR REGISTRO':'NUEVO REGISTRO';$('#save-expense').textContent=item?'Guardar cambios':'Guardar gasto';$('#date').value=today();$('#photo-title').textContent='Fotografiar o subir boleta';$('#photo-subtitle').textContent='JPG, PNG o HEIC si tu navegador lo admite';$('#scan').disabled=true;$('#scan-state').textContent='La lectura necesita conexión a internet.';if(item){$('#date').value=item.date;$('#amount').value=item.amount;$('#merchant').value=item.merchant;$('#category').value=item.category;$('#payment').value=item.payment;$('#note').value=item.note||'';if(photoData){$('#photo-title').textContent='Boleta adjunta · toca para reemplazar';$('#photo-subtitle').textContent='La foto anterior se conserva al guardar';$('#scan').disabled=false}}$('#editor').showModal()}
-function close(){$('#editor').close();editingId=null}
-async function compress(file){let bitmap=await createImageBitmap(file);let ratio=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));let canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*ratio);canvas.height=Math.round(bitmap.height*ratio);canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();return canvas.toDataURL('image/jpeg',.76)}
-function parseReceipt(text){let lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);let d=text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);if(d){let day=`${d[3]}-${d[2]}-${d[1]}`;if(!Number.isNaN(Date.parse(day))&&new Date(`${day}T12:00:00`).getDate()===Number(d[1]))$('#date').value=day}let merchant=lines.find(s=>s.length>3&&!/RUC|BOLETA|FACTURA|\d{2}[\/.-]\d{2}/i.test(s));if(merchant)$('#merchant').value=merchant.slice(0,100);let totals=lines.filter(s=>/\b(?:TOTAL(?:\s+A\s+PAGAR)?|IMPORTE\s+TOTAL)\b/i.test(s)&&!/SUBTOTAL|IGV|DESCUENTO/i.test(s));let target=totals.at(-1)||'';let numbers=target.match(/\d{1,6}(?:[.,]\d{3})*[.,]\d{2}\b/g)||[];let value=numbers.at(-1);if(value){let normalized=value.includes(',')&&value.lastIndexOf(',')>value.lastIndexOf('.')?value.replaceAll('.','').replace(',','.'):value.replaceAll(',','');let amount=Number(normalized);if(Number.isFinite(amount)&&amount>0)$('#amount').value=amount.toFixed(2)}}
-async function loadScript(src){if(window.Tesseract)return;let s=document.createElement('script');s.src=src;let ready=new Promise((resolve,reject)=>{s.onload=resolve;s.onerror=()=>reject(Error('No se pudo descargar el motor OCR'))});document.head.append(s);await ready}
-function download(blob,name){let url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),120000)}
-function excel(){let rows=current();if(!rows.length)return notice('No hay movimientos en este período.');download(BAP_XLSX.create(rows),`BAP_Gastos_${$('#month').value}.xlsx`)}
-function pdf(){let rows=current();if(!rows.length)return notice('No hay movimientos en este período.');let w=window.open('','_blank');if(!w)return notice('Permite ventanas emergentes para exportar el PDF.');let total=rows.reduce((n,e)=>n+Number(e.amount),0);w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>BAP Gastos ${safe($('#month').value)}</title><style>body{font:13px Arial;color:#172842;margin:38px}h1{font-size:26px}p{color:#64748b}.total{background:#172842;color:white;padding:20px;border-radius:8px;font-size:22px}table{width:100%;border-collapse:collapse;margin-top:23px}td,th{padding:10px;border-bottom:1px solid #dce5ee;text-align:left}th{background:#eff3f7}td:last-child,th:last-child{text-align:right}footer{margin-top:25px;color:#94a3b8}@page{size:A4;margin:18mm}</style></head><body><h1>BAP Gastos</h1><p>Reporte mensual · ${safe($('#month').value)} · ${rows.length} movimientos</p><div class="total">Total del mes: ${money(total)}</div><table><thead><tr><th>Fecha</th><th>Comercio</th><th>Categoría</th><th>Método</th><th>Monto</th></tr></thead><tbody>${rows.map(e=>`<tr><td>${safe(e.date)}</td><td>${safe(e.merchant)}</td><td>${safe(e.category)}</td><td>${safe(e.payment)}</td><td>${money(e.amount)}</td></tr>`).join('')}</tbody></table><footer>Generado desde BAP Gastos · Información registrada por el usuario</footer><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()}
-async function init(){try{db=await openDB();expenses=await all();$('#month').value=today().slice(0,7);cloudReady=cloudConfigured();render();await initCloud()}catch(e){notice('No se pudo abrir la base local. Usa un navegador actualizado y habilita el almacenamiento.');console.error(e)}}
-$('#month').addEventListener('change',render);$('#add').onclick=()=>show();$('#add-inline').onclick=()=>show();$('#cancel').onclick=close;$('#close').onclick=close;
-$('#photo').addEventListener('change',async e=>{let file=e.target.files[0];if(!file)return;try{photoData=await compress(file);$('#photo-title').textContent=file.name;$('#photo-subtitle').textContent='Foto lista para guardar';$('#scan').disabled=false;$('#scan-state').textContent='Revisa los datos después de leer la boleta.'}catch(error){photoData='';notice('No se pudo abrir esta foto. Prueba con JPG o PNG.')}});
-$('#scan').onclick=async()=>{if(!photoData)return;let btn=$('#scan');btn.disabled=true;$('#scan-state').textContent='Leyendo la boleta…';try{await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');let worker=await Tesseract.createWorker('spa+eng',1,{logger:m=>{if(m.status==='recognizing text')$('#scan-state').textContent=`Leyendo… ${Math.round(m.progress*100)}%`}});try{let result=await worker.recognize(photoData);parseReceipt(result.data.text);$('#scan-state').textContent='Lectura lista: verifica fecha, comercio y monto.'}finally{await worker.terminate()}}catch(e){$('#scan-state').textContent='Lectura no disponible. Puedes completar los campos.';notice('No se pudo leer la boleta; revisa tu conexión.')}finally{btn.disabled=false}};
-$('#expense-form').addEventListener('submit',async e=>{e.preventDefault();let amount=Number($('#amount').value),date=$('#date').value;if(!db||(cloudReady&&!cloudUser)||!Number.isFinite(amount)||amount<=0||!date)return notice('Revisa la fecha y el monto.');let original=editingId?expenses.find(x=>x.id===editingId&&!x.deleted):null;if(editingId&&!original)return notice('Este gasto ya no está disponible.');let item={...original,id:original?.id||crypto.randomUUID(),created:original?.created||new Date().toISOString(),date,amount,merchant:$('#merchant').value.trim(),category:$('#category').value,payment:$('#payment').value,note:$('#note').value.trim(),photo:photoData,credit_id:$('#expense-credit').value||null,owner_id:cloudUser?.id||null,updated_at:new Date().toISOString(),dirty:true,deleted:false};if(!item.merchant)return notice('Escribe el comercio o la descripción.');try{await put(item);expenses=expenses.filter(x=>x.id!==item.id);expenses.push(item);$('#month').value=date.slice(0,7);render();close();notice(cloudReady?'Gasto guardado. Sincronizando…':'Gasto guardado en este dispositivo.');syncCloud()}catch(err){notice('No se pudo guardar. Revisa el espacio disponible.')}});
-$('#transactions').addEventListener('click',async e=>{let btn=e.target.closest('[data-id]');if(!btn)return;let item=expenses.find(x=>x.id===btn.dataset.id&&!x.deleted);if(!item||cloudReady&&!cloudUser)return;if(btn.classList.contains('edit')){show(item);return}if(!confirm('¿Eliminar este gasto y su foto?'))return;if(cloudReady){item={...item,deleted:true,dirty:true,updated_at:new Date().toISOString()};await put(item);expenses=expenses.map(x=>x.id===item.id?item:x);syncCloud()}else{await remove(item.id);expenses=expenses.filter(x=>x.id!==item.id)}render();notice('Gasto eliminado.')});$('#excel').onclick=excel;$('#pdf').onclick=pdf;
-$('#backup').onclick=()=>{if(cloudReady&&!cloudUser)return notice('Inicia sesión para descargar tus gastos.');let records=cloudReady?expenses.filter(e=>e.owner_id===cloudUser.id):expenses;download(new Blob([JSON.stringify({format:'bap-gastos-v1',exported:new Date().toISOString(),expenses:records},null,2)],{type:'application/json'}),`BAP_Gastos_respaldo_${today()}.json`)};
-$('#restore').onchange=async e=>{let file=e.target.files[0];if(!file)return;if(cloudReady&&!cloudUser){notice('Inicia sesión para restaurar datos.');e.target.value='';return}try{let data=JSON.parse(await file.text());if(data.format!=='bap-gastos-v1'||!Array.isArray(data.expenses))throw Error('Formato inválido');if(!confirm(`¿Importar ${data.expenses.length} registros? Se conservarán los existentes y se actualizarán los ID coincidentes.`))return;for(let item of data.expenses){if(typeof item.id!=='string'||typeof item.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(item.date)||!Number.isFinite(Number(item.amount))||Number(item.amount)<=0||typeof item.merchant!=='string'||typeof item.category!=='string'||(item.photo&&typeof item.photo!=='string'))throw Error('Registro inválido')}for(let item of data.expenses){let entry={...item,owner_id:cloudUser?.id||null,dirty:true,deleted:!!item.deleted,updated_at:new Date().toISOString()};await put(entry)}expenses=await all();render();syncCloud();notice('Respaldo restaurado.')}catch(err){notice('El archivo no es un respaldo válido de BAP Gastos.')}finally{e.target.value=''}};
-if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});init();
+"use strict";
+const demoMode = new URLSearchParams(location.search).get("demo") === "1";
+const $ = (s) => document.querySelector(s);
+const money = (n) =>
+  new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(
+    Number(n) || 0,
+  );
+const today = () => new Date().toLocaleDateString("en-CA");
+const colors = [
+  "#72aaa4",
+  "#a58ec9",
+  "#e5ad65",
+  "#7394cd",
+  "#a9bf77",
+  "#d38c91",
+  "#9ab5c8",
+  "#8894a7",
+];
+let db,
+  photoData = "",
+  editingId = null,
+  expenses = [],
+  cloud = null,
+  cloudUser = null,
+  syncing = false,
+  cloudReady = false,
+  realtimeChannel = null,
+  realtimeTimer = null;
+function notice(s) {
+  const el = $("#toast");
+  el.textContent = s;
+  el.classList.add("show");
+  clearTimeout(el.timer);
+  el.timer = setTimeout(() => el.classList.remove("show"), 3500);
+}
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const q = indexedDB.open(
+      demoMode ? "bap-gastos-demo-v1" : "bap-gastos-v1",
+      1,
+    );
+    q.onupgradeneeded = () =>
+      q.result.createObjectStore("expenses", { keyPath: "id" });
+    q.onsuccess = () => resolve(q.result);
+    q.onerror = () => reject(q.error);
+  });
+}
+function all() {
+  return new Promise((resolve, reject) => {
+    const q = db.transaction("expenses").objectStore("expenses").getAll();
+    q.onsuccess = () => resolve(q.result);
+    q.onerror = () => reject(q.error);
+  });
+}
+function put(item) {
+  return new Promise((resolve, reject) => {
+    const q = db
+      .transaction("expenses", "readwrite")
+      .objectStore("expenses")
+      .put(item);
+    q.onsuccess = resolve;
+    q.onerror = () => reject(q.error);
+  });
+}
+function remove(id) {
+  return new Promise((resolve, reject) => {
+    const q = db
+      .transaction("expenses", "readwrite")
+      .objectStore("expenses")
+      .delete(id);
+    q.onsuccess = resolve;
+    q.onerror = () => reject(q.error);
+  });
+}
+function current() {
+  return expenses
+    .filter(
+      (e) =>
+        !e.deleted &&
+        (!cloudReady || e.owner_id === cloudUser?.id) &&
+        e.date.slice(0, 7) === $("#month").value,
+    )
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) || b.created.localeCompare(a.created),
+    );
+}
+function safe(t) {
+  return String(t ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+}
+function render() {
+  let rows = current(),
+    total = rows.reduce((a, e) => a + Number(e.amount), 0),
+    categories = {};
+  rows.forEach(
+    (e) =>
+      (categories[e.category] =
+        (categories[e.category] || 0) + Number(e.amount)),
+  );
+  let sorted = Object.entries(categories).sort((a, b) => b[1] - a[1]);
+  $("#total").textContent = money(total);
+  $("#count").textContent =
+    `${rows.length} movimiento${rows.length === 1 ? "" : "s"} registrado${rows.length === 1 ? "" : "s"}`;
+  $("#average").textContent = money(rows.length ? total / rows.length : 0);
+  $("#top-category").textContent = sorted[0]?.[0] || "Sin datos";
+  $("#top-category-amount").textContent = sorted.length
+    ? money(sorted[0][1])
+    : "Este mes";
+  $("#receipt-count").textContent = rows.filter((e) => e.photo).length;
+  $("#transactions").innerHTML = rows.length
+    ? rows
+        .map(
+          (e) =>
+            `<div class="transaction"><div class="transaction-icon">${e.photo ? "▧" : "◈"}</div><div class="transaction-main"><strong>${safe(e.merchant)}</strong><small>${safe(e.category)} · ${safe(e.date)} · ${safe(e.payment)}</small></div><span class="transaction-amount">${money(e.amount)}</span><button class="edit" data-id="${safe(e.id)}" title="Editar gasto" aria-label="Editar gasto">Editar</button><button class="delete" data-id="${safe(e.id)}" title="Eliminar gasto" aria-label="Eliminar gasto">×</button></div>`,
+        )
+        .join("")
+    : '<div class="empty">Aún no tienes gastos registrados este mes.<br>Agrega tu primer comprobante para empezar.</div>';
+  $("#categories").innerHTML = sorted.length
+    ? sorted
+        .map(
+          ([name, sum], i) =>
+            `<div><div class="cat-head"><span>${safe(name)}</span><span>${money(sum)} · ${Math.round((sum / total) * 100)}%</span></div><div class="track"><span style="width:${(sum / total) * 100}%;background:${colors[i % colors.length]}"></span></div></div>`,
+        )
+        .join("")
+    : '<div class="empty">Tus categorías aparecerán aquí.</div>';
+  window.dispatchEvent(new Event("bap:render"));
+}
+function requireWrite() {
+  return window.BAP_ACCESS?.requireWrite() ?? !cloudReady;
+}
+function show(item = null) {
+  if (!requireWrite()) return;
+  if (cloudReady && !cloudUser) {
+    $("#account-dialog").showModal();
+    notice("Inicia sesión para registrar gastos sincronizados.");
+    return;
+  }
+  editingId = item?.id || null;
+  photoData = item?.photo || "";
+  $("#expense-form").reset();
+  $("#expense-credit").value = item?.credit_id || "";
+  $("#editor-title").textContent = item ? "Editar gasto" : "Agrega un gasto";
+  $("#editor-eyebrow").textContent = item
+    ? "EDITAR REGISTRO"
+    : "NUEVO REGISTRO";
+  $("#save-expense").textContent = item ? "Guardar cambios" : "Guardar gasto";
+  $("#date").value = today();
+  $("#photo-title").textContent = "Fotografiar o subir boleta";
+  $("#photo-subtitle").textContent =
+    "JPG, PNG o HEIC si tu navegador lo admite";
+  $("#scan").disabled = true;
+  $("#scan-state").textContent = "La lectura necesita conexión a internet.";
+  if (item) {
+    $("#date").value = item.date;
+    $("#amount").value = item.amount;
+    $("#merchant").value = item.merchant;
+    $("#category").value = item.category;
+    $("#payment").value = item.payment;
+    $("#note").value = item.note || "";
+    if (photoData) {
+      $("#photo-title").textContent = "Boleta adjunta · toca para reemplazar";
+      $("#photo-subtitle").textContent =
+        "La foto anterior se conserva al guardar";
+      $("#scan").disabled = false;
+    }
+  }
+  $("#editor").showModal();
+}
+function close() {
+  $("#editor").close();
+  editingId = null;
+}
+async function compress(file) {
+  let bitmap = await createImageBitmap(file);
+  if (bitmap.width * bitmap.height > 40000000) {
+    bitmap.close();
+    throw Error("Imagen demasiado grande");
+  }
+  let ratio = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  let canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * ratio);
+  canvas.height = Math.round(bitmap.height * ratio);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  let data = canvas.toDataURL("image/jpeg", 0.76);
+  if (data.length > 1048576) data = canvas.toDataURL("image/jpeg", 0.45);
+  if (data.length > 1048576) throw Error("Imagen supera el límite de 1 MB");
+  return data;
+}
+function parseReceipt(text) {
+  let lines = text
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let d = text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);
+  if (d) {
+    let day = `${d[3]}-${d[2]}-${d[1]}`;
+    if (
+      !Number.isNaN(Date.parse(day)) &&
+      new Date(`${day}T12:00:00`).getDate() === Number(d[1])
+    )
+      $("#date").value = day;
+  }
+  let merchant = lines.find(
+    (s) => s.length > 3 && !/RUC|BOLETA|FACTURA|\d{2}[\/.-]\d{2}/i.test(s),
+  );
+  if (merchant) $("#merchant").value = merchant.slice(0, 100);
+  let totals = lines.filter(
+    (s) =>
+      /\b(?:TOTAL(?:\s+A\s+PAGAR)?|IMPORTE\s+TOTAL)\b/i.test(s) &&
+      !/SUBTOTAL|IGV|DESCUENTO/i.test(s),
+  );
+  let target = totals.at(-1) || "";
+  let numbers = target.match(/\d{1,6}(?:[.,]\d{3})*[.,]\d{2}\b/g) || [];
+  let value = numbers.at(-1);
+  if (value) {
+    let normalized =
+      value.includes(",") && value.lastIndexOf(",") > value.lastIndexOf(".")
+        ? value.replaceAll(".", "").replace(",", ".")
+        : value.replaceAll(",", "");
+    let amount = Number(normalized);
+    if (Number.isFinite(amount) && amount > 0)
+      $("#amount").value = amount.toFixed(2);
+  }
+}
+async function loadScript(src) {
+  if (window.Tesseract) return;
+  let s = document.createElement("script");
+  s.src = src;
+  let ready = new Promise((resolve, reject) => {
+    s.onload = resolve;
+    s.onerror = () => reject(Error("No se pudo descargar el motor OCR"));
+  });
+  document.head.append(s);
+  await ready;
+}
+function download(blob, name) {
+  let url = URL.createObjectURL(blob),
+    a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+function excel() {
+  let rows = current();
+  if (!rows.length) return notice("No hay movimientos en este período.");
+  download(BAP_XLSX.create(rows), `BAP_Gastos_${$("#month").value}.xlsx`);
+}
+function pdf() {
+  let rows = current();
+  if (!rows.length) return notice("No hay movimientos en este período.");
+  let w = window.open("", "_blank");
+  if (!w) return notice("Permite ventanas emergentes para exportar el PDF.");
+  let total = rows.reduce((n, e) => n + Number(e.amount), 0);
+  w.document.write(
+    `<!doctype html><html><head><meta charset="utf-8"><title>BAP Gastos ${safe($("#month").value)}</title><style>body{font:13px Arial;color:#172842;margin:38px}h1{font-size:26px}p{color:#64748b}.total{background:#172842;color:white;padding:20px;border-radius:8px;font-size:22px}table{width:100%;border-collapse:collapse;margin-top:23px}td,th{padding:10px;border-bottom:1px solid #dce5ee;text-align:left}th{background:#eff3f7}td:last-child,th:last-child{text-align:right}footer{margin-top:25px;color:#94a3b8}@page{size:A4;margin:18mm}</style></head><body><h1>BAP Gastos</h1><p>Reporte mensual · ${safe($("#month").value)} · ${rows.length} movimientos</p><div class="total">Total del mes: ${money(total)}</div><table><thead><tr><th>Fecha</th><th>Comercio</th><th>Categoría</th><th>Método</th><th>Monto</th></tr></thead><tbody>${rows.map((e) => `<tr><td>${safe(e.date)}</td><td>${safe(e.merchant)}</td><td>${safe(e.category)}</td><td>${safe(e.payment)}</td><td>${money(e.amount)}</td></tr>`).join("")}</tbody></table><footer>Generado desde BAP Gastos · Información registrada por el usuario</footer><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"><\/script></body></html>`,
+  );
+  w.document.close();
+}
+async function init() {
+  try {
+    db = await openDB();
+    expenses = await all();
+    $("#month").value = today().slice(0, 7);
+    cloudReady = cloudConfigured();
+    render();
+    await initCloud();
+  } catch (e) {
+    notice(
+      "No se pudo abrir la base local. Usa un navegador actualizado y habilita el almacenamiento.",
+    );
+    console.error(e);
+  }
+}
+$("#month").addEventListener("change", render);
+$("#add").onclick = () => show();
+$("#add-inline").onclick = () => show();
+$("#cancel").onclick = close;
+$("#close").onclick = close;
+$("#photo").addEventListener("change", async (e) => {
+  let file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 20000000)
+    return notice("La imagen supera 20 MB. Usa una foto más pequeña.");
+  try {
+    photoData = await compress(file);
+    $("#photo-title").textContent = file.name;
+    $("#photo-subtitle").textContent = "Foto lista para guardar";
+    $("#scan").disabled = false;
+    $("#scan-state").textContent =
+      "Revisa los datos después de leer la boleta.";
+  } catch (error) {
+    photoData = "";
+    notice("No se pudo abrir esta foto. Prueba con JPG o PNG.");
+  }
+});
+$("#scan").onclick = async () => {
+  if (!photoData) return;
+  let btn = $("#scan");
+  btn.disabled = true;
+  $("#scan-state").textContent = "Leyendo la boleta…";
+  try {
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js",
+    );
+    let worker = await Tesseract.createWorker("spa+eng", 1, {
+      logger: (m) => {
+        if (m.status === "recognizing text")
+          $("#scan-state").textContent =
+            `Leyendo… ${Math.round(m.progress * 100)}%`;
+      },
+    });
+    try {
+      let result = await worker.recognize(photoData);
+      parseReceipt(result.data.text);
+      $("#scan-state").textContent =
+        "Lectura lista: verifica fecha, comercio y monto.";
+    } finally {
+      await worker.terminate();
+    }
+  } catch (e) {
+    $("#scan-state").textContent =
+      "Lectura no disponible. Puedes completar los campos.";
+    notice("No se pudo leer la boleta; revisa tu conexión.");
+  } finally {
+    btn.disabled = false;
+  }
+};
+$("#expense-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  let amount = Number($("#amount").value),
+    date = $("#date").value;
+  if (!requireWrite()) return;
+  if (
+    !db ||
+    (cloudReady && !cloudUser) ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    !date
+  )
+    return notice("Revisa la fecha y el monto.");
+  let original = editingId
+    ? expenses.find((x) => x.id === editingId && !x.deleted)
+    : null;
+  if (editingId && !original)
+    return notice("Este gasto ya no está disponible.");
+  let item = {
+    ...original,
+    id: original?.id || crypto.randomUUID(),
+    created: original?.created || new Date().toISOString(),
+    date,
+    amount,
+    merchant: $("#merchant").value.trim(),
+    category: $("#category").value,
+    payment: $("#payment").value,
+    note: $("#note").value.trim(),
+    photo: photoData,
+    credit_id: $("#expense-credit").value || null,
+    owner_id: cloudUser?.id || null,
+    updated_at: new Date().toISOString(),
+    dirty: true,
+    deleted: false,
+  };
+  if (!item.merchant) return notice("Escribe el comercio o la descripción.");
+  try {
+    await put(item);
+    expenses = expenses.filter((x) => x.id !== item.id);
+    expenses.push(item);
+    $("#month").value = date.slice(0, 7);
+    render();
+    close();
+    notice(
+      cloudReady
+        ? "Gasto guardado. Sincronizando…"
+        : "Gasto guardado en este dispositivo.",
+    );
+    syncCloud();
+  } catch (err) {
+    notice("No se pudo guardar. Revisa el espacio disponible.");
+  }
+});
+$("#transactions").addEventListener("click", async (e) => {
+  let btn = e.target.closest("[data-id]");
+  if (!btn) return;
+  let item = expenses.find((x) => x.id === btn.dataset.id && !x.deleted);
+  if (!item || (cloudReady && !cloudUser) || !requireWrite()) return;
+  if (btn.classList.contains("edit")) {
+    show(item);
+    return;
+  }
+  if (!confirm("¿Eliminar este gasto y su foto?")) return;
+  if (cloudReady) {
+    item = {
+      ...item,
+      deleted: true,
+      dirty: true,
+      updated_at: new Date().toISOString(),
+    };
+    await put(item);
+    expenses = expenses.map((x) => (x.id === item.id ? item : x));
+    syncCloud();
+  } else {
+    await remove(item.id);
+    expenses = expenses.filter((x) => x.id !== item.id);
+  }
+  render();
+  notice("Gasto eliminado.");
+});
+$("#excel").onclick = excel;
+$("#pdf").onclick = pdf;
+$("#backup").onclick = () => {
+  if (cloudReady && !cloudUser)
+    return notice("Inicia sesión para descargar tus gastos.");
+  let records = cloudReady
+    ? expenses.filter((e) => e.owner_id === cloudUser.id)
+    : expenses;
+  download(
+    new Blob(
+      [
+        JSON.stringify(
+          {
+            format: "bap-gastos-v1",
+            exported: new Date().toISOString(),
+            expenses: records,
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    ),
+    `BAP_Gastos_respaldo_${today()}.json`,
+  );
+};
+$("#restore").onchange = async (e) => {
+  let file = e.target.files[0];
+  if (!file) return;
+  if (!requireWrite()) {
+    e.target.value = "";
+    return;
+  }
+  if (file.size > 30000000) {
+    notice("El respaldo supera 30 MB. Contacta al soporte.");
+    e.target.value = "";
+    return;
+  }
+  if (cloudReady && !cloudUser) {
+    notice("Inicia sesión para restaurar datos.");
+    e.target.value = "";
+    return;
+  }
+  try {
+    let data = JSON.parse(await file.text());
+    if (
+      data.format !== "bap-gastos-v1" ||
+      !Array.isArray(data.expenses) ||
+      data.expenses.length > 50000
+    )
+      throw Error("Formato inválido");
+    if (
+      !confirm(
+        `¿Importar ${data.expenses.length} registros? Se conservarán los existentes y se actualizarán los ID coincidentes.`,
+      )
+    )
+      return;
+    for (let item of data.expenses) {
+      if (
+        typeof item.id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          item.id,
+        ) ||
+        typeof item.date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(item.date) ||
+        !Number.isFinite(Number(item.amount)) ||
+        Number(item.amount) <= 0 ||
+        typeof item.merchant !== "string" ||
+        typeof item.category !== "string" ||
+        (item.photo &&
+          (typeof item.photo !== "string" ||
+            item.photo.length > 1048576 ||
+            !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(
+              item.photo,
+            ))) ||
+        String(item.note || "").length > 200 ||
+        item.merchant.length > 100 ||
+        Number(item.amount) > 999999999
+      )
+        throw Error("Registro inválido");
+    }
+    for (let item of data.expenses) {
+      let entry = {
+        ...item,
+        owner_id: cloudUser?.id || null,
+        dirty: true,
+        deleted: !!item.deleted,
+        updated_at: new Date().toISOString(),
+      };
+      await put(entry);
+    }
+    expenses = await all();
+    render();
+    syncCloud();
+    notice("Respaldo restaurado.");
+  } catch (err) {
+    notice("El archivo no es un respaldo válido de BAP Gastos.");
+  } finally {
+    e.target.value = "";
+  }
+};
+if ("serviceWorker" in navigator && location.protocol !== "file:")
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+init();
 
-window.BAP_APP={state:()=>({user:cloudUser,configured:cloudReady,demo:demoMode,cloud,expenses:expenses.filter(e=>!cloudReady||e.owner_id===cloudUser?.id)}),notice};
+window.BAP_APP = {
+  state: () => ({
+    user: cloudUser,
+    configured: cloudReady,
+    demo: demoMode,
+    cloud,
+    expenses: expenses.filter(
+      (e) => !cloudReady || e.owner_id === cloudUser?.id,
+    ),
+  }),
+  notice,
+};
 // Sincronización opcional: el navegador conserva una copia local y sube los cambios pendientes.
-const config=window.BAP_CLOUD_CONFIG||{};
-function cloudConfigured(){return !demoMode&&Boolean(config.url&&config.publishableKey)}
-function updateAccount(){let enabled=cloudConfigured();$('#account').textContent=demoMode?'Modo de ejemplo':!enabled?'☁ Configurar nube':cloudUser?'☁ '+(syncing?'Sincronizando…':'Sincronizado'):'☁ Iniciar sesión';$('#account-state').textContent=!enabled?'Falta configurar el proyecto Supabase. Consulta README.md.':cloudUser?`Sesión: ${cloudUser.email}. Los gastos se sincronizan al conectarse.`:'Inicia sesión para sincronizar tus gastos entre dispositivos.';$('#auth-form').hidden=!enabled||!!cloudUser;$('#sign-out').hidden=!cloudUser;$('#delete-account').hidden=!cloudUser||!config.accountDeletion;$('#sync-foot').firstChild.textContent=enabled?'BAP Gastos · Los cambios pendientes se guardan en este dispositivo hasta recuperar conexión. · ':'BAP Gastos · Los datos están únicamente en este navegador hasta configurar la nube. · '}
-async function initCloud(){cloudReady=cloudConfigured();if(!cloudReady){updateAccount();return}if(!window.supabase?.createClient){notice('No se pudo cargar la conexión en línea. Revisa internet.');updateAccount();return}cloud=window.supabase.createClient(config.url,config.publishableKey);cloud.auth.onAuthStateChange((event,session)=>{setTimeout(()=>setUser(session?.user||null),0)});let {data,error}=await cloud.auth.getUser();if(!error)await setUser(data.user);else if(!navigator.onLine){let {data:cached}=await cloud.auth.getSession();if(cached.session?.user)await setUser(cached.session.user)}updateAccount();setInterval(()=>{if(cloudUser&&navigator.onLine)syncCloud()},30000)}
-async function setUser(user){if(cloudUser?.id!==user?.id)stopRealtime();if(user&&localStorage.getItem('bap-gastos-owner')&&localStorage.getItem('bap-gastos-owner')!==user.id){notice('Este navegador contiene datos de otra cuenta. Restaura un respaldo en un perfil separado.');await cloud.auth.signOut();return}cloudUser=user;if(user){localStorage.setItem('bap-gastos-owner',user.id);for(let e of expenses.filter(x=>!x.owner_id)){let updated={...e,owner_id:user.id,dirty:true,deleted:!!e.deleted,updated_at:e.updated_at||e.created||new Date().toISOString()};await put(updated)}expenses=await all();await syncCloud();startRealtime()}render();updateAccount()}
-function stopRealtime(){clearTimeout(realtimeTimer);realtimeTimer=null;if(realtimeChannel&&cloud)cloud.removeChannel(realtimeChannel);realtimeChannel=null}
-function startRealtime(){if(!cloud||!cloudUser||realtimeChannel)return;const userId=cloudUser.id;realtimeChannel=cloud.channel(`bap-expenses-${userId}`).on('postgres_changes',{event:'*',schema:'public',table:'expenses',filter:`user_id=eq.${userId}`},()=>{if(cloudUser?.id!==userId)return;clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>syncCloud(),350)}).subscribe(status=>{if(status==='CHANNEL_ERROR')console.warn('Realtime temporalmente no disponible; se conserva la sincronización periódica.')})}
-function remoteRow(e){return {id:e.id,user_id:cloudUser.id,date:e.date,amount:Number(e.amount),merchant:e.merchant,category:e.category,payment:e.payment,note:e.note||'',photo:e.photo||'',created:e.created||new Date().toISOString(),updated_at:e.updated_at||new Date().toISOString(),deleted:!!e.deleted,credit_id:e.credit_id||null}}
-function localRow(e){return {id:e.id,owner_id:e.user_id,date:e.date,amount:Number(e.amount),merchant:e.merchant,category:e.category,payment:e.payment,note:e.note||'',photo:e.photo||'',created:e.created,updated_at:e.updated_at,deleted:e.deleted,credit_id:e.credit_id||null,dirty:false}}
-async function syncCloud(){if(!cloud||!cloudUser||syncing||!navigator.onLine)return;syncing=true;updateAccount();let userId=cloudUser.id;try{let pending=expenses.filter(e=>e.owner_id===userId&&e.dirty);for(let entry of pending){if(cloudUser?.id!==userId)return;let {data:existing,error:readError}=await cloud.from('expenses').select('updated_at').eq('id',entry.id).maybeSingle();if(readError)throw readError;if(existing&&Date.parse(existing.updated_at)>Date.parse(entry.updated_at)){continue}let {error}=await cloud.from('expenses').upsert(remoteRow(entry),{onConflict:'id'});if(error)throw error;let latest=expenses.find(e=>e.id===entry.id);if(latest?.updated_at===entry.updated_at){latest.dirty=false;await put(latest)}}let start=0,received=[];while(true){let {data,error}=await cloud.from('expenses').select('*').order('created',{ascending:true}).range(start,start+499);if(error)throw error;received.push(...data);if(data.length<500)break;start+=500}if(cloudUser?.id!==userId)return;for(let remote of received){let local=expenses.find(e=>e.id===remote.id);if(!local||Date.parse(remote.updated_at)>Date.parse(local.updated_at)||!local.dirty){let entry=localRow(remote);await put(entry)}}expenses=await all();render();updateAccount()}catch(err){console.error('Sync error',err);notice('Sincronización pendiente. Se reintentará al recuperar la conexión.')}finally{syncing=false;updateAccount()}}
-$('#delete-account').onclick=async()=>{if(!cloudUser||!config.accountDeletion||!navigator.onLine)return notice('Conéctate a internet para eliminar la cuenta.');let email=cloudUser.email||'tu cuenta';if(!confirm(`Se eliminarán la cuenta ${email} y sus gastos de la nube. Los respaldos descargados y las copias en otros dispositivos requieren eliminación por separado. Descarga tu respaldo antes de continuar. ¿Deseas seguir?`))return;if(prompt('Para confirmar la eliminación definitiva, escribe ELIMINAR:')!=='ELIMINAR')return;let button=$('#delete-account');button.disabled=true;try{let owner=cloudUser.id;let {error}=await cloud.rpc('delete_my_account');if(error)throw error;let localError=false;try{await window.BAP_FINANCE?.clearOwner(owner)}catch(err){localError=true;console.error('Finance cleanup error',err)}for(let entry of expenses.filter(e=>e.owner_id===owner)){try{await remove(entry.id)}catch(err){localError=true;console.error('Local cleanup error',err)}}expenses=await all().catch(()=>{localError=true;return []});stopRealtime();await cloud.auth.signOut({scope:'local'}).catch(err=>console.error('Local sign-out error',err));cloudUser=null;if(!localError)localStorage.removeItem('bap-gastos-owner');render();updateAccount();$('#account-dialog').close();notice(localError?'Cuenta y gastos en línea eliminados. No se pudieron borrar todas las copias de este navegador; elimina los datos de este sitio en el navegador.':'Cuenta y gastos en línea eliminados. Borra las copias locales de otros dispositivos por separado.')}catch(error){console.error('Account deletion error',error);notice('No se pudo confirmar la eliminación. Contacta al soporte desde Datos y privacidad.')}finally{button.disabled=false}};
-$('#account').onclick=()=>{if(demoMode)return notice('Este ejemplo guarda datos ficticios en una base separada sin sincronizar.');$('#account-dialog').showModal();updateAccount()};$('#account-close').onclick=()=>$('#account-dialog').close();$('#send-link').onclick=async()=>{let email=$('#auth-email').value.trim();if(!email||!$('#auth-email').checkValidity())return notice('Escribe un correo válido.');if(!cloud)return notice('La conexión en línea no está configurada.');let {error}=await cloud.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});notice(error?'No se pudo enviar el enlace: '+error.message:'Revisa tu correo para abrir el enlace de acceso.')};$('#sign-out').onclick=async()=>{if(!cloud)return;stopRealtime();await cloud.auth.signOut();cloudUser=null;render();updateAccount();$('#account-dialog').close();notice('Sesión cerrada. Los datos locales permanecen asociados a esta cuenta.')};window.addEventListener('online',syncCloud);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncCloud()});
+const config = window.BAP_CLOUD_CONFIG || {};
+function cloudConfigured() {
+  return !demoMode && Boolean(config.url && config.publishableKey);
+}
+function updateAccount() {
+  let enabled = cloudConfigured();
+  $("#account").textContent = demoMode
+    ? "Modo de ejemplo"
+    : !enabled
+      ? "☁ Configurar nube"
+      : cloudUser
+        ? "☁ " + (syncing ? "Sincronizando…" : "Mi cuenta")
+        : "☁ Iniciar sesión";
+  $("#account-state").textContent = !enabled
+    ? "Falta configurar el proyecto Supabase. Consulta README.md."
+    : cloudUser
+      ? `Sesión: ${cloudUser.email}. Los gastos se sincronizan al conectarse.`
+      : "Inicia sesión para sincronizar tus gastos entre dispositivos.";
+  $("#auth-form").hidden = !enabled || !!cloudUser;
+  $("#sign-out").hidden = !cloudUser;
+  $("#delete-account").hidden = !cloudUser || !config.accountDeletion;
+  $("#sync-foot").firstChild.textContent = enabled
+    ? "BAP Gastos · Los cambios pendientes se guardan en este dispositivo hasta recuperar conexión. · "
+    : "BAP Gastos · Los datos están únicamente en este navegador hasta configurar la nube. · ";
+}
+async function initCloud() {
+  cloudReady = cloudConfigured();
+  if (!cloudReady) {
+    updateAccount();
+    return;
+  }
+  if (!window.supabase?.createClient) {
+    notice("No se pudo cargar la conexión en línea. Revisa internet.");
+    updateAccount();
+    return;
+  }
+  cloud = window.supabase.createClient(config.url, config.publishableKey);
+  cloud.auth.onAuthStateChange((event, session) => {
+    setTimeout(() => setUser(session?.user || null), 0);
+  });
+  let { data, error } = await cloud.auth.getUser();
+  if (!error) await setUser(data.user);
+  else if (!navigator.onLine) {
+    let { data: cached } = await cloud.auth.getSession();
+    if (cached.session?.user) await setUser(cached.session.user);
+  }
+  updateAccount();
+  setInterval(() => {
+    if (cloudUser && navigator.onLine) syncCloud();
+  }, 30000);
+}
+async function setUser(user) {
+  if (cloudUser?.id !== user?.id) stopRealtime();
+  if (
+    user &&
+    localStorage.getItem("bap-gastos-owner") &&
+    localStorage.getItem("bap-gastos-owner") !== user.id
+  ) {
+    notice(
+      "Este navegador contiene datos de otra cuenta. Restaura un respaldo en un perfil separado.",
+    );
+    await cloud.auth.signOut();
+    return;
+  }
+  cloudUser = user;
+  await window.BAP_ACCESS?.refresh();
+  if (user) {
+    localStorage.setItem("bap-gastos-owner", user.id);
+    for (let e of expenses.filter((x) => !x.owner_id)) {
+      let updated = {
+        ...e,
+        owner_id: user.id,
+        dirty: true,
+        deleted: !!e.deleted,
+        updated_at: e.updated_at || e.created || new Date().toISOString(),
+      };
+      await put(updated);
+    }
+    expenses = await all();
+    await syncCloud();
+    startRealtime();
+  }
+  render();
+  updateAccount();
+}
+function stopRealtime() {
+  clearTimeout(realtimeTimer);
+  realtimeTimer = null;
+  if (realtimeChannel && cloud) cloud.removeChannel(realtimeChannel);
+  realtimeChannel = null;
+}
+function startRealtime() {
+  if (!cloud || !cloudUser || realtimeChannel) return;
+  const userId = cloudUser.id;
+  realtimeChannel = cloud
+    .channel(`bap-expenses-${userId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "expenses",
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        if (cloudUser?.id !== userId) return;
+        clearTimeout(realtimeTimer);
+        realtimeTimer = setTimeout(() => syncCloud(), 350);
+      },
+    )
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR")
+        console.warn(
+          "Realtime temporalmente no disponible; se conserva la sincronización periódica.",
+        );
+    });
+}
+function remoteRow(e) {
+  return {
+    id: e.id,
+    user_id: cloudUser.id,
+    date: e.date,
+    amount: Number(e.amount),
+    merchant: e.merchant,
+    category: e.category,
+    payment: e.payment,
+    note: e.note || "",
+    photo: e.photo || "",
+    created: e.created || new Date().toISOString(),
+    updated_at: e.updated_at || new Date().toISOString(),
+    deleted: !!e.deleted,
+    credit_id: e.credit_id || null,
+  };
+}
+function localRow(e) {
+  return {
+    id: e.id,
+    owner_id: e.user_id,
+    date: e.date,
+    amount: Number(e.amount),
+    merchant: e.merchant,
+    category: e.category,
+    payment: e.payment,
+    note: e.note || "",
+    photo: e.photo || "",
+    created: e.created,
+    updated_at: e.updated_at,
+    deleted: e.deleted,
+    credit_id: e.credit_id || null,
+    dirty: false,
+  };
+}
+async function syncCloud() {
+  if (!cloud || !cloudUser || syncing || !navigator.onLine) return;
+  syncing = true;
+  updateAccount();
+  let userId = cloudUser.id;
+  try {
+    let pending =
+      (window.BAP_ACCESS?.canWrite() ?? false)
+        ? expenses.filter((e) => e.owner_id === userId && e.dirty)
+        : [];
+    for (let entry of pending) {
+      if (cloudUser?.id !== userId || !window.BAP_ACCESS?.canWrite()) return;
+      let { data: existing, error: readError } = await cloud
+        .from("expenses")
+        .select("updated_at")
+        .eq("id", entry.id)
+        .maybeSingle();
+      if (readError) throw readError;
+      if (
+        existing &&
+        Date.parse(existing.updated_at) > Date.parse(entry.updated_at)
+      ) {
+        continue;
+      }
+      let { error } = await cloud
+        .from("expenses")
+        .upsert(remoteRow(entry), { onConflict: "id" });
+      if (error) throw error;
+      let latest = expenses.find((e) => e.id === entry.id);
+      if (latest?.updated_at === entry.updated_at) {
+        latest.dirty = false;
+        await put(latest);
+      }
+    }
+    let start = 0,
+      received = [];
+    while (true) {
+      let { data, error } = await cloud
+        .from("expenses")
+        .select("*")
+        .order("created", { ascending: true })
+        .range(start, start + 499);
+      if (error) throw error;
+      received.push(...data);
+      if (data.length < 500) break;
+      start += 500;
+    }
+    if (cloudUser?.id !== userId) return;
+    for (let remote of received) {
+      let local = expenses.find((e) => e.id === remote.id);
+      if (
+        !local ||
+        Date.parse(remote.updated_at) > Date.parse(local.updated_at) ||
+        !local.dirty
+      ) {
+        let entry = localRow(remote);
+        await put(entry);
+      }
+    }
+    expenses = await all();
+    render();
+    updateAccount();
+  } catch (err) {
+    console.error("Sync error", err);
+    notice(
+      "Sincronización pendiente. Se reintentará al recuperar la conexión.",
+    );
+  } finally {
+    syncing = false;
+    updateAccount();
+  }
+}
+$("#delete-account").onclick = async () => {
+  if (!cloudUser || !config.accountDeletion || !navigator.onLine)
+    return notice("Conéctate a internet para eliminar la cuenta.");
+  let email = cloudUser.email || "tu cuenta";
+  if (
+    !confirm(
+      `Se eliminarán la cuenta ${email} y sus gastos de la nube. Los respaldos descargados y las copias en otros dispositivos requieren eliminación por separado. Descarga tu respaldo antes de continuar. ¿Deseas seguir?`,
+    )
+  )
+    return;
+  if (
+    prompt("Para confirmar la eliminación definitiva, escribe ELIMINAR:") !==
+    "ELIMINAR"
+  )
+    return;
+  let button = $("#delete-account");
+  button.disabled = true;
+  try {
+    let owner = cloudUser.id;
+    let { error } = await cloud.rpc("delete_my_account");
+    if (error) throw error;
+    let localError = false;
+    try {
+      await window.BAP_FINANCE?.clearOwner(owner);
+    } catch (err) {
+      localError = true;
+      console.error("Finance cleanup error", err);
+    }
+    for (let entry of expenses.filter((e) => e.owner_id === owner)) {
+      try {
+        await remove(entry.id);
+      } catch (err) {
+        localError = true;
+        console.error("Local cleanup error", err);
+      }
+    }
+    expenses = await all().catch(() => {
+      localError = true;
+      return [];
+    });
+    stopRealtime();
+    await cloud.auth
+      .signOut({ scope: "local" })
+      .catch((err) => console.error("Local sign-out error", err));
+    cloudUser = null;
+    if (!localError) localStorage.removeItem("bap-gastos-owner");
+    render();
+    updateAccount();
+    $("#account-dialog").close();
+    notice(
+      localError
+        ? "Cuenta y gastos en línea eliminados. No se pudieron borrar todas las copias de este navegador; elimina los datos de este sitio en el navegador."
+        : "Cuenta y gastos en línea eliminados. Borra las copias locales de otros dispositivos por separado.",
+    );
+  } catch (error) {
+    console.error("Account deletion error", error);
+    notice(
+      "No se pudo confirmar la eliminación. Contacta al soporte desde Datos y privacidad.",
+    );
+  } finally {
+    button.disabled = false;
+  }
+};
+$("#account").onclick = () => {
+  if (demoMode)
+    return notice(
+      "Este ejemplo guarda datos ficticios en una base separada sin sincronizar.",
+    );
+  $("#account-dialog").showModal();
+  updateAccount();
+};
+$("#account-close").onclick = () => $("#account-dialog").close();
+$("#send-link").onclick = async () => {
+  let email = $("#auth-email").value.trim();
+  if (!email || !$("#auth-email").checkValidity())
+    return notice("Escribe un correo válido.");
+  if (!cloud) return notice("La conexión en línea no está configurada.");
+  let button = $("#send-link");
+  button.disabled = true;
+  try {
+    let { error } = await cloud.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: location.origin + location.pathname },
+    });
+    if (error)
+      notice(
+        "No se pudo enviar el enlace. Si el correo no está autorizado, BAP debe completar su correo de producción.",
+      );
+    else
+      notice(
+        "Si el envío está habilitado, revisa tu correo y spam para abrir el enlace.",
+      );
+  } catch {
+    notice("No se pudo enviar. Revisa tu conexión.");
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+    }, 60000);
+  }
+};
+$("#sign-out").onclick = async () => {
+  if (!cloud) return;
+  stopRealtime();
+  await cloud.auth.signOut();
+  cloudUser = null;
+  render();
+  updateAccount();
+  $("#account-dialog").close();
+  notice(
+    "Sesión cerrada. Los datos locales permanecen asociados a esta cuenta.",
+  );
+};
+window.addEventListener("online", syncCloud);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) syncCloud();
+});
+
+window.BAP_APP.requireWrite = requireWrite;
+window.addEventListener("bap:access", () => {
+  render();
+  updateAccount();
+});

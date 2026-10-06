@@ -1,0 +1,208 @@
+.commercial-area {
+  scroll-margin-top: 24px;
+  margin: 28px 0;
+}
+.commercial-intro {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+}
+.commercial-intro h2 {
+  font-size: 28px;
+  letter-spacing: -0.8px;
+}
+.commercial-intro p {
+  max-width: 580px;
+  color: #6a7d8e;
+}
+.access-chip {
+  display: inline-block;
+  padding: 6px 11px;
+  border-radius: 20px;
+  background: #edf4f1;
+  color: #326962;
+  font-size: 12px;
+  margin: 8px 8px 8px 0;
+}
+.access-card {
+  padding: 22px 26px;
+  border: 1px solid #e7edf1;
+  border-radius: 18px;
+  background: #f7faf9;
+  margin: 20px 0;
+}
+.access-card h3 {
+  margin: 4px 0;
+  font-size: 21px;
+}
+.access-card p {
+  color: #647789;
+  font-size: 14px;
+}
+.access-request {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+}
+.access-request label {
+  flex: 1;
+}
+.commercial-area label {
+  display: block;
+  font-size: 13px;
+  color: #526b7d;
+}
+.commercial-area input,
+.commercial-area select,
+#decision-dialog input,
+#decision-dialog select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 11px;
+  border: 1px solid #dbe4e9;
+  border-radius: 10px;
+  background: white;
+  color: #172b47;
+}
+.commercial-area input[type="checkbox"] {
+  width: auto;
+}
+.commercial-note {
+  padding: 15px;
+  background: #fff6e7;
+  border-radius: 12px;
+  color: #8a632b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.commercial-admin {
+  margin-top: 24px;
+}
+.commercial-customer {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid #e8edf1;
+  padding: 18px 0;
+}
+.commercial-customer > div {
+  flex: 1;
+  min-width: 0;
+}
+.commercial-customer strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.commercial-customer small {
+  display: block;
+  color: #728291;
+}
+.commercial-customer a {
+  text-decoration: none;
+  white-space: nowrap;
+}
+.commercial-plans {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.commercial-plan {
+  background: #f8fafb;
+  border: 1px solid #e5ecef;
+  padding: 18px;
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+}
+.admin-search {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+}
+.admin-search input {
+  margin: 0;
+}
+.commercial-admin .section-head {
+  flex-wrap: wrap;
+}
+.mfa-image {
+  width: 190px;
+  max-width: 100%;
+  border: 1px solid #e3e8ee;
+  margin: 10px 0;
+}
+.mfa-secret {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.admin-pagination {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+.commercial-area [hidden] {
+  display: none !important;
+}
+#decision-dialog {
+  max-width: 620px;
+}
+#decision-dialog .account-body {
+  padding: 28px;
+}
+.commercial-help {
+  color: #738395;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.access-demo {
+  margin-bottom: 16px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: #fff1d9;
+  color: #815e2a;
+  font-size: 13px;
+}
+@media (max-width: 1000px) {
+  .commercial-plans {
+    grid-template-columns: 1fr;
+  }
+  .commercial-intro {
+    align-items: flex-start;
+  }
+  .commercial-customer {
+    flex-wrap: wrap;
+  }
+  .commercial-customer > div {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 650px) {
+  .commercial-intro,
+  .access-request {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .commercial-intro h2 {
+    font-size: 23px;
+  }
+  .access-card {
+    padding: 18px;
+  }
+  .admin-search {
+    flex-wrap: wrap;
+  }
+  .admin-search input {
+    flex-basis: 100%;
+  }
+  .commercial-customer a {
+    white-space: normal;
+  }
+  .commercial-area {
+    margin: 20px 0;
+  }
+}
+
+#access-admin-link[hidden] {
+  display: none !important;
+}

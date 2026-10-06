@@ -28,7 +28,7 @@ Si no llega el enlace, revisar spam y los logs de Authentication en Supabase. Un
 
 - Identificar al responsable de datos y formalizar aviso de privacidad, términos y procedimiento verificable de eliminación de cuenta.
 - Elegir una dirección de remitente y configurar SMTP con credenciales almacenadas únicamente en Supabase.
-- Definir precio, límites y facturación. Implementar límites **en el servidor** (por ejemplo, políticas/RPC), no únicamente en JavaScript público. No hay pasarela de pago ni suscripción activa actualmente.
+- Definir precio, límites y facturación. Implementar límites **en el servidor** (por ejemplo, políticas/RPC), no únicamente en JavaScript público. El módulo comercial incorpora solicitudes, planes, vigencias y pagos manuales; consultar COMERCIAL.md. La instalación no activa restricciones ni asigna administradores por sí sola. No hay pasarela ni cobro recurrente.
 - Revisar cuotas del plan gratuito de Supabase, especialmente el tamaño de fotografías en la tabla `expenses`.
 
 ## Referencias oficiales

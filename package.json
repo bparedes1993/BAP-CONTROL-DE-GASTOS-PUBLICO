@@ -1,0 +1,13 @@
+{
+  "name": "bap-control-de-gastos",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node finance-model.test.js && node commercial.test.mjs && node access-ui.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "fake-indexeddb": "6.2.2",
+    "jsdom": "26.1.0"
+  }
+}

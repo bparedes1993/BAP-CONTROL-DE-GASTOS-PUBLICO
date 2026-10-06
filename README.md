@@ -2,6 +2,12 @@
 
 Aplicación web adaptable e instalable para registrar gastos desde celular y computadora.
 
+## Control comercial (06/10/2026)
+
+Incluye Mi acceso, solicitudes, planes configurables, vigencias, pago manual confirmado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación inicial conserva modo piloto hasta autorizar al titular, verificar MFA y activar el control. SMTP de producción y pruebas reales de alta siguen pendientes; no hay cobros automáticos.
+
+Pruebas: `npm ci` y `npm test`. El SQL está documentado en `commercial.sql` y el rol inicial en `commercial-bootstrap.sql`; no ejecutar la asignación sin autorización del titular.
+
 ## Finanzas personales
 
 Ingresos cobrados, tarjetas, deudas, préstamos otorgados, pagos/cobros con desglose, flujo de efectivo y distribución mensual de dinero. Incluye orientación de reducción de deuda, reserva e instrumentos de simulación con supuestos explícitos. Consulta [FINANZAS.md](FINANZAS.md) para registrar correctamente saldos base y movimientos.
@@ -40,7 +46,7 @@ Si `config.js` queda vacío, la aplicación continúa en modo local. El reposito
 
 ## Preparación para comercializar
 
-La publicación actual en GitHub Pages es para demostración y uso personal. Antes de ofrecer la aplicación como servicio comercial, migra el frontend a un alojamiento que admita ese uso, configura un SMTP propio para los enlaces de acceso y prueba el flujo de alta y sincronización con dos dispositivos reales. No hay cobros ni planes activos; los precios y límites requieren una implementación con validación en el servidor. Prepara aviso de privacidad, términos, contacto de soporte y un procedimiento para eliminar la cuenta y sus datos antes de invitar clientes.
+La publicación en GitHub Pages queda para demostración y uso personal; el servicio comercial utiliza la dirección de Cloudflare indicada arriba. Antes de ofrecerlo a clientes, configura un SMTP propio para los enlaces de acceso y prueba el flujo de alta y sincronización con dos dispositivos reales. No hay cobros automáticos. El módulo comercial implementa planes y límites en el servidor; la activación obligatoria y correo de producción deben completarse antes de vender. Prepara aviso de privacidad, términos y contacto de soporte y verifica el procedimiento de eliminación de cuenta antes de invitar clientes.
 
 ## Estado de publicación y privacidad
 

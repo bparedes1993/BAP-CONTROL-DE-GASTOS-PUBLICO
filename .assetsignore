@@ -1,0 +1,8 @@
+node_modules/**
+.git/**
+*.sql
+*.md
+*.test.js
+*.test.mjs
+package*.json
+SUPABASE-LICENSE.txt
