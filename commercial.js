@@ -49,6 +49,7 @@
     factor = null,
     operation = null;
   let claimCheckedUser = null;
+  let chosenPlan = null, chosenPlanOwner = null;
   const demo = () => !!app().demo;
   function canWrite() {
     const s = app();
@@ -79,6 +80,12 @@
       request = $("#access-request"),
       admin = $("#commercial-admin");
     if (!box) return;
+    const catalog = $("#access-catalog");
+    catalog.hidden = !snapshot || (!s.user && !demo());
+    if (chosenPlanOwner !== s.user?.id) {
+      chosenPlanOwner = s.user?.id;
+      chosenPlan = null;
+    }
     $("#access-demo").hidden = !demo();
     $("#access-login").hidden = !!s.user || demo();
     if (!s.user && !demo()) {
@@ -107,6 +114,16 @@
           `<option value="${escape(p.id)}">${escape(p.name)} · ${p.days} días · ${p.price_pen == null ? "Precio por acordar" : currency(p.price_pen)}</option>`,
       )
       .join("");
+    if (!snapshot.plans.some((p) => p.id === chosenPlan))
+      chosenPlan = snapshot.requested_plan || snapshot.plan_id || snapshot.plans[0]?.id;
+    $("#requested-plan").value = chosenPlan || "";
+    catalog.innerHTML = snapshot.plans.map((p) => `<article class="access-offer"><span class="eyebrow">${escape(p.days)} DÍAS</span><h3>${escape(p.name)}</h3><strong class="offer-price">${p.price_pen == null ? "Precio por acordar" : currency(Number(p.price_pen))}</strong><p>Gastos, ingresos y deudas. Consulta desde celular y computadora, con exportación PDF y Excel.</p><button class="outline" data-choose-plan="${escape(p.id)}" aria-pressed="${p.id === chosenPlan}" ${request.hidden ? "disabled" : ""}>${p.id === chosenPlan ? "Plan seleccionado" : "Elegir plan"}</button></article>`).join("");
+    const requested = snapshot.plans.find((p) => p.id === snapshot.requested_plan);
+    $("#access-request-state").textContent = snapshot.status === "pending" && requested
+      ? `Solicitud pendiente: ${requested.name}. BAP confirmará las condiciones, el pago y la activación. Solicitar no realiza un cobro.`
+      : request.hidden ? "Para renovar o revisar tu acceso, contacta a BAP."
+      : "Elige tu plan y envía la solicitud. La activación requiere aprobación de BAP; no se cobra al iniciar sesión.";
+    $("#request-access").disabled = !snapshot.plans.length;
     $("#access-payments").innerHTML = snapshot.payments.length
       ? "<h3>Pagos registrados por BAP</h3>" +
         snapshot.payments
@@ -166,6 +183,9 @@
           const claim = await s.cloud.rpc("bap_claim_admin_authorization");
           if (claim.error) throw claim.error;
           if (app().user?.id !== id) return null;
+          const registration = await s.cloud.rpc("bap_register_customer");
+          if (registration.error) throw registration.error;
+          if (app().user?.id !== id) return null;
           claimCheckedUser = id;
         }
         const { data, error } = await s.cloud.rpc("bap_my_access");
@@ -200,6 +220,17 @@
   }
   $("#access-login").onclick = () => $("#account-dialog").showModal();
   $("#access-refresh").onclick = refresh;
+  $("#requested-plan").onchange = () => {
+    chosenPlan = $("#requested-plan").value;
+    paint();
+  };
+  $("#access-catalog").onclick = (e) => {
+    const button = e.target.closest("[data-choose-plan]");
+    if (!button || button.disabled) return;
+    chosenPlan = button.dataset.choosePlan;
+    paint();
+    $("#requested-plan").focus();
+  };
   $("#access-request").onsubmit = async (e) => {
     e.preventDefault();
     if (demo()) return notify("Ejemplo ficticio: ninguna solicitud se envió.");
@@ -220,6 +251,7 @@
       adminData = {
         enforcement: true,
         plans: snapshot.plans,
+        summary: { total: 1, pending: 1, active: 0, expired: 0, payments_pen: 0 },
         customers: [
           {
             user_id: "00000000-0000-4000-8000-000000000101",
@@ -228,6 +260,7 @@
             status: "pending",
             effective_status: "pending",
             requested_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString(),
             ends_at: null,
           },
         ],
@@ -240,14 +273,20 @@
         p_search: $("#admin-search").value.trim(),
       });
     }
+    const totals = adminData.summary || {};
+    $("#admin-overview").innerHTML = [
+      ["Cuentas registradas", totals.total], ["Pendientes", totals.pending],
+      ["Planes vigentes", totals.active], ["Vencidos", totals.expired],
+      ["Pagos registrados", currency(Number(totals.payments_pen || 0))],
+    ].map(([label, value]) => `<div><span>${escape(label)}</span><strong>${escape(value ?? 0)}</strong></div>`).join("");
     $("#admin-clients").innerHTML = adminData.customers.length
       ? adminData.customers
           .map(
             (c) =>
-              `<article class="commercial-customer"><div><strong>${escape(c.email)}</strong><span class="access-chip">${escape(labels[c.effective_status] || c.status)}</span><small>${escape(c.plan_id || c.requested_plan || "Sin plan")} · Hasta ${escape(date(c.ends_at))}</small></div><button class="outline" data-manage="${escape(c.user_id)}">Gestionar acceso</button><a class="text-btn" href="mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent("BAP · Estado de tu acceso")}&body=${encodeURIComponent("Hola. El estado de tu acceso a BAP es: " + (labels[c.effective_status] || c.status) + ".\nConsulta tu plan y vigencia entrando en la web de BAP.\n" + location.origin + location.pathname)}">Preparar correo</a></article>`,
+              `<article class="commercial-customer"><div><strong>${escape(c.email)}</strong><span class="access-chip">${escape(labels[c.effective_status] || c.status)}</span><small>${escape(c.plan_id || c.requested_plan || "Sin plan solicitado")} · Hasta ${escape(date(c.ends_at))}</small><small>Última entrada a BAP: ${escape(c.last_seen_at ? new Date(c.last_seen_at).toLocaleString("es-PE", {timeZone: "America/Lima"}) : "Aún sin entrada registrada")}</small></div><button class="outline" data-manage="${escape(c.user_id)}">Gestionar acceso</button><a class="text-btn" href="mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent("BAP · Estado de tu acceso")}&body=${encodeURIComponent("Hola. El estado de tu acceso a BAP es: " + (labels[c.effective_status] || c.status) + ".\nConsulta tu plan y vigencia entrando en la web de BAP.\n" + location.origin + location.pathname)}">Preparar correo</a></article>`,
           )
           .join("")
-      : '<p class="finance-help">No se encontraron solicitudes.</p>';
+      : '<p class="finance-help">No se encontraron clientes.</p>';
     $("#admin-plans").innerHTML = adminData.plans
       .map(
         (p) =>
@@ -312,7 +351,7 @@
     $("#decision-plan").innerHTML = adminData.plans
       .map((p) => `<option value="${escape(p.id)}">${escape(p.name)}</option>`)
       .join("");
-    $("#decision-plan").value = selected.plan_id || selected.requested_plan;
+    $("#decision-plan").value = selected.plan_id || selected.requested_plan || adminData.plans.find((p) => p.published !== false)?.id || adminData.plans[0]?.id || "";
     $("#decision-days").value =
       adminData.plans.find((p) => p.id === $("#decision-plan").value)?.days ||
       30;

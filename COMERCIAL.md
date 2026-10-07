@@ -1,11 +1,11 @@
 # Control comercial de BAP Gastos
 
-Estado al 07/10/2026: implementación y migración comercial preparadas y comprobadas. La instalación inicial conserva **modo piloto** (`enforcement=false`) y no asigna administradores. El control obligatorio requiere que el titular autorice su rol, configure segundo factor y revise las cuentas existentes. No hay cobros automáticos ni correos comerciales automáticos.
+Estado al 07/10/2026: catálogo de planes y registro de cuentas verificadas al entrar incorporados. La instalación inicial conserva modo piloto; `commercial-enforce.sql` activa el control por petición del titular sin aprobar cuentas ni registrar pagos. El control obligatorio fue activado en este proyecto el 07/10/2026 por petición del titular: sin aprobación vigente solo se conserva consulta y exportación. La autorización administrativa reservada necesita inicio de sesión verificado y segundo factor. Google espera configuración del titular; ver [GOOGLE.md](GOOGLE.md). No hay cobros automáticos ni correos comerciales automáticos.
 
 ## Flujo de cliente
 
-1. Entra en la URL de Cloudflare y pulsa **Verificar mi correo**. El enlace de Supabase verifica la identidad del correo; no acredita un pago ni activa un plan.
-2. En **Mi acceso**, selecciona un plan y pulsa **Solicitar acceso**. La solicitud queda pendiente en el servidor. No envía un correo al administrador: aparece en su panel.
+1. Entra en la URL de Cloudflare e inicia sesión. Google estará disponible después de configurar el proveedor; el acceso alternativo por correo requiere SMTP. La identidad verificada no acredita un pago ni activa un plan. La cuenta aparece en Administración aunque aún no solicite plan.
+2. En **Mi acceso**, selecciona un plan y pulsa **Enviar solicitud de plan**. La solicitud queda pendiente en el servidor. No envía un correo al administrador: aparece en su panel.
 3. BAP acuerda precio y condiciones y comprueba el pago recibido por fuera de la aplicación, si corresponde.
 4. El administrador aprueba o renueva la vigencia. El cliente actualiza **Mi acceso** y ve su estado. Cuando el control está activo, solo un acceso vigente permite crear, editar, restaurar y sincronizar cambios.
 5. Una cuenta vencida o suspendida puede leer y exportar sus propios registros, eliminar su propia cuenta y contactar al soporte. No se borran datos por falta de pago.
@@ -17,7 +17,7 @@ Los planes iniciales tienen precios vacíos: **mensual de 30 días**, **semestra
 1. Obtener su autorización explícita para el rol administrativo. La identidad debe corresponder a una cuenta de BAP con correo verificado; no basta iniciar sesión en el Dashboard de Supabase.
 2. Ejecutar `admin-authorizations.sql` y luego `commercial-bootstrap.sql`, sustituyendo su marcador por el correo autorizado. Si la cuenta ya está verificada, asigna el rol. Si aún no existe, reserva una autorización de un solo uso por 30 días, que se reclama al verificar el correo e iniciar sesión. No crea usuarios ni confirma correos. Borrar/recrear la cuenta no permite reclamar una autorización ya consumida. No publicar la variante privada ni credenciales. Ver SMTP.md.
 3. El titular inicia sesión en BAP. En **Administración**, pulsa **Configurar / verificar segundo factor**, guarda el factor en su aplicación autenticadora y verifica el código. Nunca compartirlo con el soporte ni en el chat.
-4. Cargar solicitudes, aprobar primero las cuentas que deben conservar acceso y configurar precios.
+4. **Cargar clientes**, aprobar las cuentas que deben conservar acceso y configurar precios. El panel muestra cuentas registradas, estados, pagos registrados y última entrada aproximada a BAP; no proporciona saldos personales ni un historial completo de sesiones.
 5. Activar **Control obligatorio** solo después de revisar las cuentas actuales y probar el flujo con dos cuentas descartables. El servidor comprueba el plan; ocultar un botón no es la protección.
 
 Las funciones administrativas exigen rol almacenado en la base y JWT con `aal2`. El usuario no puede darse un rol mediante `user_metadata`, alterar las tablas de planes ni confirmar su propio pago. El administrador comercial tampoco recibe acceso a los gastos personales de los clientes. Recuperar un segundo factor perdido requiere verificar identidad en un procedimiento de soporte; no existe un bypass público.

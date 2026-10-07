@@ -2,6 +2,8 @@
 
 Actualización: 07/10/2026. El correo solicitado para administración es `contacto.bapsoluciones@gmail.com`. La autorización administrativa se reserva en el servidor y solo se reclama mediante una cuenta de BAP con ese correo **verificado**. Es de un solo uso, vence en 30 días si no se reclama y no vuelve a habilitarse tras eliminar/recrear la cuenta. Las decisiones comerciales continúan exigiendo MFA. No crea usuarios ni marca correos como confirmados.
 
+Se ha elegido incorporar Google como acceso principal: ese flujo no necesita que BAP envíe un correo SMTP. Requiere configurar el cliente OAuth y proveedor según [GOOGLE.md](GOOGLE.md). SMTP queda para el acceso alternativo por correo. No se han completado ni probado los secretos de ninguno de estos proveedores. Con PKCE, los enlaces nuevos por correo se abren en el mismo navegador que los solicitó; el código puede introducirse en esa sesión.
+
 ## SMTP para el piloto sin comprar dominio
 
 Los datos de conexión preparados son:

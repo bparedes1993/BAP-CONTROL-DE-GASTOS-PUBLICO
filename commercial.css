@@ -206,3 +206,16 @@
 #access-admin-link[hidden] {
   display: none !important;
 }
+.access-catalog { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:22px 0; }
+.access-offer { display:flex; flex-direction:column; align-items:flex-start; padding:22px; border:1px solid #dce7e6; border-radius:16px; background:linear-gradient(135deg,#f9fcfb,#f0f6f4); }
+.access-offer h3 { font-size:18px; margin:12px 0; }
+.offer-price { color:#285b52; font-size:23px; }
+.access-offer p { font-size:13px; line-height:1.7; color:#62778a; flex:1; }
+.access-offer button { width:100%; }
+.access-offer button[aria-pressed="true"] { background:#e1efe7; border-color:#88b6a2; color:#245347; }
+.admin-overview { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin:20px 0; }
+.admin-overview>div { padding:16px; background:#f2f6f8; border-radius:12px; }
+.admin-overview span { display:block; color:#677e8d; font-size:12px; }
+.admin-overview strong { display:block; margin-top:10px; font-size:23px; color:#23443f; }
+@media(max-width:900px){ .admin-overview { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:650px){ .access-catalog { grid-template-columns:1fr; } }

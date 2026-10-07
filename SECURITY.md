@@ -24,11 +24,11 @@ Las funciones `security definer` fijan `search_path=''`, califican los esquemas 
 
 ## Evidencia
 
-La suite completa del 07/10/2026 pasó 109 comprobaciones de acceso comercial, autorización administrativa, sincronización y cliente, además de los escenarios de cálculo financiero. Las pruebas incluyen autorizaciones vencidas/revocadas, consumo de un solo uso, aislamiento entre cuentas, reintentos y guardado atómico de cursores. Se ejecutaron con PostgreSQL/PGlite, DOM y Auth simulados; no constituyen pruebas de carga ni un pentest.
+La suite completa del 07/10/2026 pasó 164 comprobaciones de acceso comercial, autorización administrativa, sincronización, registro de clientes, OAuth con API simulada y cliente, además de los escenarios de cálculo financiero. Las pruebas incluyen autorizaciones vencidas/revocadas, consumo de un solo uso, aislamiento entre cuentas, reintentos y guardado atómico de cursores. Se ejecutaron con PostgreSQL/PGlite, DOM y Auth simulados; no constituyen pruebas de carga ni un pentest.
 
 La migración comercial pasó pruebas repetibles en PostgreSQL/PGlite: intento anónimo, rol falso en metadatos, escritura directa a tablas comerciales, aprobación sin MFA, vigencia pendiente/vencida/suspendida, lectura entre usuarios, enlaces financieros cruzados, campos inválidos, cupos y reintentos. La suite financiera sigue pasando. La verificación estructural de Supabase confirmó RLS comercial, ausencia de escritura directa de rol/plan, prohibición de RPC administrativo anónimo y cuatro políticas restrictivas de planes.
 
-La instalación preserva modo piloto (`enforcement=false`) hasta que el titular autorice su rol y active el control. La existencia de reglas no significa que el control obligatorio ya esté activo. La suite aislada sustituye el proveedor Auth por claims de prueba: valida las reglas SQL, pero no el envío del correo ni el proceso real de MFA.
+La instalación base conserva modo piloto; `commercial-enforce.sql` activa el control por decisión del titular. En este proyecto se aplicó y verificó `enforcement=true` el 07/10/2026 por petición del titular. El registro de una cuenta verificada nunca concede un plan. Google requiere completar su configuración y prueba real. La suite aislada sustituye el proveedor Auth por claims de prueba: valida las reglas SQL, pero no el envío del correo ni el proceso real de MFA.
 
 La integración del cliente incluye comprobaciones en un DOM sintético: acceso pendiente y vencido bloquean registros, acceso activo permite gastos/ingresos, se conservan exportaciones y la demostración no transmite decisiones administrativas. Estas pruebas usan Auth/API simulados, no dos cuentas reales en producción.
 
@@ -36,8 +36,8 @@ La integración del cliente incluye comprobaciones en un DOM sintético: acceso 
 
 | Prioridad | Trabajo pendiente                                                                                                                   |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Alta      | Verificar la cuenta autorizada del titular, configurar/verificar MFA y activar el control tras revisar usuarios actuales.           |
-| Alta      | SMTP de producción, entrega a correos externos, protección contra abuso de altas y revisión de límites de Auth.                     |
+| Alta      | Verificar la cuenta autorizada del titular, configurar/verificar MFA y revisar usuarios actuales.           |
+| Alta      | Activación y prueba real de Google; SMTP para correo alternativo, protección contra abuso y revisión de límites de Auth.                     |
 | Alta      | Aviso de privacidad y condiciones con responsable identificado, soporte, cancelación y retención.                                   |
 | Alta      | Prueba real de dos cuentas, dos dispositivos, pérdida de conexión y eliminación de cuenta descartable.                              |
 | Alta      | Respaldo de la base y restauración ensayada fuera de producción; el JSON individual no reemplaza un respaldo del servicio completo. |
@@ -53,3 +53,5 @@ Una revisión de acceso a la aplicación no cubre vulnerabilidades del proveedor
 Referencias primarias: [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [funciones seguras](https://supabase.com/docs/guides/database/functions), [MFA](https://supabase.com/docs/guides/auth/auth-mfa), [producción](https://supabase.com/docs/guides/deployment/going-into-prod), [headers de Cloudflare](https://developers.cloudflare.com/workers/static-assets/headers/).
 
 La autorización de administrador puede reservarse para un correo inexistente: el servidor exige verificar ese correo, consume la autorización una sola vez y mantiene MFA obligatorio para gestionar clientes. No acepta un email/rol enviado por el navegador como prueba de identidad. El acceso por código es opcional hasta configurar las plantillas SMTP; los códigos no se persisten ni se registran. Ver SMTP.md.
+
+OAuth usa PKCE en el SDK oficial con retorno al mismo origen y permisos básicos de identidad. Se eliminan códigos/errores del URL después de inicializar Auth y el service worker no almacena respuestas de callback. Client Secret se introduce exclusivamente en Supabase; Google no concede permisos administrativos ni confirma pagos.

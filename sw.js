@@ -1,4 +1,4 @@
-const CACHE = "bap-comercial-v10";
+const CACHE = "bap-google-planes-v11";
 const ASSETS = [
   "./",
   "./index.html",
@@ -39,9 +39,11 @@ self.addEventListener("activate", (event) =>
   ),
 );
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
   if (
     event.request.method !== "GET" ||
-    new URL(event.request.url).origin !== self.location.origin
+    url.origin !== self.location.origin ||
+    ["code", "error", "error_code", "error_description", "flow_id"].some(key => url.searchParams.has(key))
   )
     return;
   event.respondWith(

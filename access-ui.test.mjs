@@ -31,7 +31,7 @@ const wait = async (test) => {
   throw Error("Fixture did not settle");
 };
 let checks = 0;
-async function create(url, anonymous = false) {
+async function create(url, anonymous = false, options = {}) {
   const dom = new JSDOM(html, {
     url,
     runScripts: "outside-only",
@@ -63,6 +63,7 @@ async function create(url, anonymous = false) {
     url: "https://backend.example.invalid",
     publishableKey: "public-fixture",
     accountDeletion: false,
+    googleLoginEnabled: options.google !== false,
   };
   let entitlement = {
     status: "pending",
@@ -78,13 +79,17 @@ async function create(url, anonymous = false) {
   };
   let currentUser = anonymous ? null : user,
     sends = 0,
-    verifications = 0;
+    verifications = 0, registrations = 0, oauth = [], clientOptions;
   const cloud = {
     auth: {
       onAuthStateChange: () => {},
       getUser: async () => ({ data: { user: currentUser } }),
       getSession: async () => ({ data: { session: { user } } }),
       signOut: async () => ({}),
+      signInWithOAuth: async (args) => {
+        oauth.push(args);
+        return options.oauthResult ? await options.oauthResult() : {};
+      },
       signInWithOtp: async () => {
         sends++;
         return {};
@@ -103,6 +108,14 @@ async function create(url, anonymous = false) {
       rpcCount++;
       if (name === "bap_claim_admin_authorization")
         return { data: { claimed: false }, error: null };
+      if (name === "bap_register_customer") {
+        registrations++;
+        return { data: null, error: null };
+      }
+      if (name === "bap_request_access") {
+        entitlement = {...entitlement, requested_plan: args.p_plan, status: "pending", can_write: false};
+        return { data: entitlement, error: null };
+      }
       if (name === "bap_pull_changes")
         return {
           data: {
@@ -146,12 +159,13 @@ async function create(url, anonymous = false) {
       },
     }),
   };
-  w.supabase = { createClient: () => cloud };
+  w.supabase = { createClient: (url, key, opts) => { clientOptions = opts; return cloud; } };
   for (const [name, source] of scripts)
     w.eval(source + "\n//# sourceURL=" + name);
   await wait(() => w.BAP_APP?.state().configured || w.BAP_APP?.state().demo);
   if (!w.BAP_APP.state().demo && !anonymous)
     await wait(() => w.BAP_APP.state().user && w.BAP_ACCESS.snapshot());
+  await wait(() => !/Cargando|Abriendo|Sincronizando/.test(w.document.querySelector("#finance-sync").textContent));
   return {
     w,
     dom,
@@ -163,12 +177,27 @@ async function create(url, anonymous = false) {
     rpcCount: () => rpcCount,
     sends: () => sends,
     verifications: () => verifications,
+    registrations: () => registrations,
+    oauth: () => oauth,
+    clientOptions: () => clientOptions,
   };
 }
 const f = await create("https://app.example.invalid/");
 const w = f.w,
   $ = (s) => w.document.querySelector(s);
 assert.equal(w.BAP_ACCESS.canWrite(), false);
+checks++;
+assert.equal(f.registrations(), 1);
+checks++;
+assert.equal($("#access-catalog").hidden, false);
+checks++;
+$("#access-request").dispatchEvent(new w.Event("submit", {bubbles:true,cancelable:true}));
+await wait(() => !$("#request-access").disabled);
+assert.equal(w.BAP_ACCESS.canWrite(), false);
+assert.match($("#access-request-state").textContent, /Solicitud pendiente/);
+checks += 2;
+await w.BAP_ACCESS.refresh();
+assert.equal(f.registrations(), 1);
 checks++;
 $("#add").click();
 assert.equal($("#editor").open, false);
@@ -313,6 +342,45 @@ assert.equal(
 checks++;
 await wait(() => !lq("#finance-sync").textContent.includes("Sincronizando"));
 login.dom.window.close();
+const google = await create("https://app.example.invalid/?next=https://untrusted.example.invalid", true);
+google.w.document.querySelector("#account").click();
+google.w.document.querySelector("#sign-in-google").click();
+await wait(() => google.oauth().length === 1);
+await wait(() => !google.w.document.querySelector("#sign-in-google").disabled);
+assert.equal(google.clientOptions().auth.flowType, "pkce");
+assert.equal(google.clientOptions().auth.detectSessionInUrl, true);
+assert.equal(google.oauth()[0].provider, "google");
+assert.equal(google.oauth()[0].options.redirectTo, "https://app.example.invalid/");
+assert.equal(google.oauth()[0].options.scopes, "openid email profile");
+assert.equal(google.w.BAP_APP.state().user, null);
+assert.equal(google.writeCount(), 0);
+checks += 7;
+google.dom.window.close();
+const staged = await create("https://app.example.invalid/", true, {google:false});
+assert.equal(staged.w.document.querySelector("#sign-in-google").disabled, true);
+staged.w.document.querySelector("#sign-in-google").click();
+assert.equal(staged.oauth().length, 0);
+checks += 2;
+staged.dom.window.close();
+let finishOAuth;
+const failed = await create("https://app.example.invalid/", true, {oauthResult: () => new Promise((r) => { finishOAuth = r; })});
+const gb = failed.w.document.querySelector("#sign-in-google");
+gb.click(); gb.click();
+assert.equal(failed.oauth().length, 1);
+assert.equal(gb.disabled, true);
+finishOAuth({error:{message:"PRIVATE-FIXTURE-PROVIDER-ERROR"}});
+await wait(() => !gb.disabled);
+assert.match(failed.w.document.querySelector("#google-state").textContent, /No se pudo iniciar/);
+assert.equal(failed.w.document.body.textContent.includes("PRIVATE-FIXTURE"), false);
+checks += 4;
+failed.dom.window.close();
+const callback = await create("https://app.example.invalid/?code=SYNTHETIC-OAUTH-CODE&error_description=PRIVATE-FIXTURE#access_token=FAKE-FIXTURE");
+assert.equal(callback.w.location.search, "");
+assert.equal(callback.w.location.hash, "#mi-acceso");
+assert.equal(callback.w.BAP_ACCESS.canWrite(), false);
+assert.equal(callback.registrations(), 1);
+checks += 4;
+callback.dom.window.close();
 console.log(
   `Client integration: ${checks} checks passed (synthetic DOM and mock API).`,
 );

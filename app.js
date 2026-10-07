@@ -553,6 +553,10 @@ function updateAccount() {
       ? `Sesión: ${cloudUser.email}. Los gastos se sincronizan al conectarse.`
       : "Inicia sesión para sincronizar tus gastos entre dispositivos.";
   $("#auth-form").hidden = !enabled || !!cloudUser;
+  $("#sign-in-google").disabled = !enabled || !config.googleLoginEnabled || signingInGoogle;
+  if (!signingInGoogle) $("#google-state").textContent = config.googleLoginEnabled
+    ? "Google verifica tu identidad. BAP no recibe tu contraseña."
+    : "El acceso con Google estará disponible pronto. Contacta a BAP para solicitar tu acceso.";
   $("#sign-out").hidden = !cloudUser;
   $("#delete-account").hidden = !cloudUser || !config.accountDeletion;
   $("#sync-foot").firstChild.textContent = enabled
@@ -570,11 +574,23 @@ async function initCloud() {
     updateAccount();
     return;
   }
-  cloud = window.supabase.createClient(config.url, config.publishableKey);
+  const authParams = new URLSearchParams(location.search),
+    hashParams = new URLSearchParams(location.hash.slice(1)),
+    authCallback = authParams.has("code") || authParams.has("error") || hashParams.has("error") || hashParams.has("access_token");
+  cloud = window.supabase.createClient(config.url, config.publishableKey, {
+    auth: { flowType: "pkce", detectSessionInUrl: true },
+  });
   cloud.auth.onAuthStateChange((event, session) => {
     setTimeout(() => setUser(session?.user || null), 0);
   });
   let { data, error } = await cloud.auth.getUser();
+  if (authCallback) {
+    const safe = new URL(location.href);
+    for (const key of ["code", "error", "error_code", "error_description", "flow_id"]) safe.searchParams.delete(key);
+    safe.hash = "mi-acceso";
+    history.replaceState(null, "", safe.pathname + safe.search + safe.hash);
+    if (error || !data?.user) notice("No se pudo completar el acceso. Vuelve a iniciar sesión desde este navegador.");
+  }
   if (!error) await setUser(data.user);
   else if (!navigator.onLine) {
     let { data: cached } = await cloud.auth.getSession();
@@ -586,6 +602,7 @@ async function initCloud() {
   }, 30000);
 }
 async function setUser(user) {
+  const firstSession = !!user && cloudUser?.id !== user.id;
   if (cloudUser?.id !== user?.id) stopRealtime();
   if (
     user &&
@@ -618,6 +635,13 @@ async function setUser(user) {
   }
   render();
   updateAccount();
+  if (firstSession && cloudUser?.id === user.id) {
+    $("#account-dialog").close();
+    const access = window.BAP_ACCESS?.snapshot();
+    if (access?.is_admin || access?.status !== "active") {
+      $(access?.is_admin ? "#commercial-admin" : "#mi-acceso").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 }
 function stopRealtime() {
   clearTimeout(realtimeTimer);
@@ -828,7 +852,35 @@ $("#account").onclick = () => {
 };
 $("#account-close").onclick = () => $("#account-dialog").close();
 let pendingAuthEmail = null,
-  verifyingCode = false;
+  verifyingCode = false,
+  signingInGoogle = false;
+$("#sign-in-google").onclick = async () => {
+  if (demoMode || signingInGoogle || !cloud || !config.googleLoginEnabled) return;
+  signingInGoogle = true;
+  pendingAuthEmail = null;
+  $("#otp-form").hidden = true;
+  $("#auth-code").value = "";
+  $("#sign-in-google").disabled = true;
+  $("#google-state").textContent = "Abriendo Google…";
+  try {
+    const { error } = await cloud.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: location.origin + location.pathname,
+        scopes: "openid email profile",
+        queryParams: { prompt: "select_account" },
+      },
+    });
+    $("#google-state").textContent = error
+      ? "No se pudo iniciar el acceso con Google. Reintenta o contacta a BAP."
+      : "Continúa en Google para iniciar sesión. Solicitarás tu plan al regresar.";
+  } catch {
+    $("#google-state").textContent = "No se pudo conectar con Google. Revisa internet y reintenta.";
+  } finally {
+    signingInGoogle = false;
+    $("#sign-in-google").disabled = !config.googleLoginEnabled;
+  }
+};
 $("#auth-email").addEventListener("input", () => {
   pendingAuthEmail = null;
   $("#otp-form").hidden = true;
