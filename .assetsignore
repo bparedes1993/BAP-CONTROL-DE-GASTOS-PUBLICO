@@ -6,3 +6,4 @@ node_modules/**
 *.test.mjs
 package*.json
 SUPABASE-LICENSE.txt
+auth-email-template.html

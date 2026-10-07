@@ -2,9 +2,9 @@
 
 Aplicación web adaptable e instalable para registrar gastos desde celular y computadora.
 
-## Control comercial (06/10/2026)
+## Control comercial (07/10/2026)
 
-Incluye Mi acceso, solicitudes, planes configurables, vigencias, pago manual confirmado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación inicial conserva modo piloto hasta autorizar al titular, verificar MFA y activar el control. SMTP de producción y pruebas reales de alta siguen pendientes; no hay cobros automáticos.
+Incluye Mi acceso, solicitudes, planes configurables, vigencias, pago manual confirmado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación inicial conserva modo piloto hasta autorizar al titular, verificar MFA y activar el control. El acceso admite código o enlace por correo; SMTP sigue requiriendo credencial y prueba de entrega. Incluye autorización administrativa reservada e incremental-sync.sql para reducir descargas repetidas. Ver [SMTP.md](SMTP.md). No hay cobros automáticos.
 
 Pruebas: `npm ci` y `npm test`. El SQL está documentado en `commercial.sql` y el rol inicial en `commercial-bootstrap.sql`; no ejecutar la asignación sin autorización del titular.
 

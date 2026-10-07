@@ -48,7 +48,8 @@ function openDB() {
 function all() {
   return new Promise((resolve, reject) => {
     const q = db.transaction("expenses").objectStore("expenses").getAll();
-    q.onsuccess = () => resolve(q.result);
+    q.onsuccess = () =>
+      resolve(q.result.filter((e) => !window.BAP_SYNC.isMeta(e)));
     q.onerror = () => reject(q.error);
   });
 }
@@ -719,31 +720,23 @@ async function syncCloud() {
         await put(latest);
       }
     }
-    let start = 0,
-      received = [];
-    while (true) {
-      let { data, error } = await cloud
-        .from("expenses")
-        .select("*")
-        .order("created", { ascending: true })
-        .range(start, start + 499);
-      if (error) throw error;
-      received.push(...data);
-      if (data.length < 500) break;
-      start += 500;
-    }
+    await window.BAP_SYNC.pull({
+      db,
+      store: "expenses",
+      userId,
+      cloud,
+      kind: "expenses",
+      active: () => cloudUser?.id === userId,
+      merge: (remote) => {
+        const local = expenses.find((e) => e.id === remote.id);
+        return !local ||
+          !local.dirty ||
+          Date.parse(remote.updated_at) > Date.parse(local.updated_at)
+          ? localRow(remote)
+          : null;
+      },
+    });
     if (cloudUser?.id !== userId) return;
-    for (let remote of received) {
-      let local = expenses.find((e) => e.id === remote.id);
-      if (
-        !local ||
-        Date.parse(remote.updated_at) > Date.parse(local.updated_at) ||
-        !local.dirty
-      ) {
-        let entry = localRow(remote);
-        await put(entry);
-      }
-    }
     expenses = await all();
     render();
     updateAccount();
@@ -793,6 +786,11 @@ $("#delete-account").onclick = async () => {
         console.error("Local cleanup error", err);
       }
     }
+    try {
+      await window.BAP_SYNC.clearCursor(db, "expenses", owner);
+    } catch {
+      localError = true;
+    }
     expenses = await all().catch(() => {
       localError = true;
       return [];
@@ -829,6 +827,13 @@ $("#account").onclick = () => {
   updateAccount();
 };
 $("#account-close").onclick = () => $("#account-dialog").close();
+let pendingAuthEmail = null,
+  verifyingCode = false;
+$("#auth-email").addEventListener("input", () => {
+  pendingAuthEmail = null;
+  $("#otp-form").hidden = true;
+  $("#auth-code").value = "";
+});
 $("#send-link").onclick = async () => {
   let email = $("#auth-email").value.trim();
   if (!email || !$("#auth-email").checkValidity())
@@ -843,18 +848,61 @@ $("#send-link").onclick = async () => {
     });
     if (error)
       notice(
-        "No se pudo enviar el enlace. Si el correo no está autorizado, BAP debe completar su correo de producción.",
+        "No se pudo enviar el acceso. Revisa tu conexión o contacta a BAP.",
       );
-    else
+    else {
+      pendingAuthEmail = email;
+      $("#otp-form").hidden = false;
+      $("#auth-code").value = "";
+      $("#otp-state").textContent =
+        "Si recibiste un código, escríbelo aquí. Si recibiste un enlace, ábrelo para continuar. No compartas el acceso.";
       notice(
-        "Si el envío está habilitado, revisa tu correo y spam para abrir el enlace.",
+        "Revisa tu correo y spam. La solicitud de envío no confirma la entrega.",
       );
+    }
   } catch {
     notice("No se pudo enviar. Revisa tu conexión.");
   } finally {
     setTimeout(() => {
       button.disabled = false;
     }, 60000);
+  }
+};
+$("#otp-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (
+    !cloud ||
+    verifyingCode ||
+    !pendingAuthEmail ||
+    !$("#auth-code").checkValidity()
+  )
+    return;
+  verifyingCode = true;
+  $("#verify-code").disabled = true;
+  const email = pendingAuthEmail,
+    token = $("#auth-code").value.trim();
+  $("#auth-code").value = "";
+  try {
+    const { data, error } = await cloud.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+    if (error || !data?.user) {
+      $("#otp-state").textContent =
+        "Código inválido o vencido. Revisa el correo o solicita uno nuevo.";
+      return;
+    }
+    pendingAuthEmail = null;
+    $("#otp-form").hidden = true;
+    await setUser(data.user);
+    $("#account-dialog").close();
+    notice("Correo verificado. Consulta Mi acceso para ver tu autorización.");
+  } catch {
+    $("#otp-state").textContent = "No se pudo verificar. Revisa tu conexión.";
+  } finally {
+    verifyingCode = false;
+    $("#verify-code").disabled = false;
   }
 };
 $("#sign-out").onclick = async () => {

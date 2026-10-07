@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+  </head>
+  <body
+    style="
+      margin: 0;
+      background: #f3f6fa;
+      font-family: Arial, sans-serif;
+      color: #172b47;
+    "
+  >
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              max-width: 520px;
+              background: #fff;
+              border: 1px solid #dce5ec;
+              border-radius: 16px;
+            "
+          >
+            <tr>
+              <td style="padding: 32px">
+                <p style="font-size: 14px; color: #526d69; letter-spacing: 2px">
+                  BAP SOLUCIONES
+                </p>
+                <h1 style="font-size: 26px; line-height: 1.3">
+                  Tu acceso a BAP Gastos
+                </h1>
+                <p>
+                  Escribe este código en la ventana donde solicitaste el acceso:
+                </p>
+                <p
+                  style="
+                    padding: 18px;
+                    background: #edf4f2;
+                    border-radius: 10px;
+                    font-size: 30px;
+                    font-weight: bold;
+                    letter-spacing: 6px;
+                    text-align: center;
+                  "
+                >
+                  {{ .Token }}
+                </p>
+                <p>
+                  El código es de un solo uso y tiene una vigencia limitada. Si
+                  venció, solicita otro desde la web. BAP nunca te pedirá que lo
+                  compartas por correo, chat o teléfono.
+                </p>
+                <p>
+                  <a
+                    href="{{ .SiteURL }}"
+                    style="color: #326e63; font-weight: bold"
+                    >Abrir BAP Gastos</a
+                  >
+                </p>
+                <p style="font-size: 13px; color: #667b8e">
+                  Si no solicitaste este acceso, puedes ignorar el mensaje.
+                  Verificar el correo no acredita un pago ni activa un plan.
+                </p>
+                <p
+                  style="
+                    font-size: 12px;
+                    color: #667b8e;
+                    border-top: 1px solid #dce5ec;
+                    padding-top: 16px;
+                  "
+                >
+                  Este mensaje no incluye movimientos ni saldos financieros.
+                  Soporte: contacto.bapsoluciones@gmail.com
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

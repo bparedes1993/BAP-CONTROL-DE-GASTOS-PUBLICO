@@ -1,4 +1,4 @@
-const CACHE = "bap-comercial-v9";
+const CACHE = "bap-comercial-v10";
 const ASSETS = [
   "./",
   "./index.html",
@@ -16,6 +16,7 @@ const ASSETS = [
   "./commercial.css",
   "./supabase-client.js",
   "./print-report.js",
+  "./sync-client.js",
 ];
 self.addEventListener("install", (event) =>
   event.waitUntil(

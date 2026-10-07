@@ -7,12 +7,17 @@ import assert from "node:assert/strict";
 // Tests our source against a synthetic DOM and mock Auth/API, never a real site.
 const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
 const scripts = await Promise.all(
-  ["xlsx.js", "finance-model.js", "commercial.js", "app.js", "finance.js"].map(
-    async (name) => [
-      name,
-      await readFile(new URL(name, import.meta.url), "utf8"),
-    ],
-  ),
+  [
+    "xlsx.js",
+    "finance-model.js",
+    "sync-client.js",
+    "commercial.js",
+    "app.js",
+    "finance.js",
+  ].map(async (name) => [
+    name,
+    await readFile(new URL(name, import.meta.url), "utf8"),
+  ]),
 );
 const user = {
   id: "10000000-0000-4000-8000-000000000001",
@@ -26,7 +31,7 @@ const wait = async (test) => {
   throw Error("Fixture did not settle");
 };
 let checks = 0;
-async function create(url) {
+async function create(url, anonymous = false) {
   const dom = new JSDOM(html, {
     url,
     runScripts: "outside-only",
@@ -71,16 +76,42 @@ async function create(url) {
     payments: [],
     server_now: new Date().toISOString(),
   };
+  let currentUser = anonymous ? null : user,
+    sends = 0,
+    verifications = 0;
   const cloud = {
     auth: {
       onAuthStateChange: () => {},
-      getUser: async () => ({ data: { user } }),
+      getUser: async () => ({ data: { user: currentUser } }),
       getSession: async () => ({ data: { session: { user } } }),
       signOut: async () => ({}),
-      signInWithOtp: async () => ({}),
+      signInWithOtp: async () => {
+        sends++;
+        return {};
+      },
+      verifyOtp: async ({ email, token, type }) => {
+        verifications++;
+        assert.equal(email, "fixture@example.invalid");
+        assert.equal(type, "email");
+        if (token !== "135790")
+          return { error: { message: "invalid fixture" } };
+        currentUser = user;
+        return { data: { user }, error: null };
+      },
     },
-    rpc: async (name) => {
+    rpc: async (name, args) => {
       rpcCount++;
+      if (name === "bap_claim_admin_authorization")
+        return { data: { claimed: false }, error: null };
+      if (name === "bap_pull_changes")
+        return {
+          data: {
+            rows: [],
+            cursor: { version: args.p_version, id: args.p_id },
+            more: false,
+          },
+          error: null,
+        };
       if (name === "bap_my_access")
         return {
           data: { ...entitlement, server_now: new Date().toISOString() },
@@ -119,7 +150,7 @@ async function create(url) {
   for (const [name, source] of scripts)
     w.eval(source + "\n//# sourceURL=" + name);
   await wait(() => w.BAP_APP?.state().configured || w.BAP_APP?.state().demo);
-  if (!w.BAP_APP.state().demo)
+  if (!w.BAP_APP.state().demo && !anonymous)
     await wait(() => w.BAP_APP.state().user && w.BAP_ACCESS.snapshot());
   return {
     w,
@@ -130,6 +161,8 @@ async function create(url) {
     downloadCount: () => downloads,
     writeCount: () => remoteWrites,
     rpcCount: () => rpcCount,
+    sends: () => sends,
+    verifications: () => verifications,
   };
 }
 const f = await create("https://app.example.invalid/");
@@ -182,6 +215,7 @@ await wait(() =>
   $("#finance-incomes").textContent.includes("Ingreso ficticio"),
 );
 checks++;
+await wait(() => !$("#finance-editor").open);
 f.set({
   status: "expired",
   can_write: false,
@@ -232,6 +266,53 @@ await wait(() =>
     .textContent.includes("Sueldo de ejemplo"),
 );
 d.dom.window.close();
+const login = await create("https://app.example.invalid/", true),
+  lw = login.w,
+  lq = (s) => lw.document.querySelector(s);
+lq("#account").click();
+lq("#auth-email").value = "fixture@example.invalid";
+lq("#send-link").click();
+await wait(() => !lq("#otp-form").hidden);
+assert.equal(login.sends(), 1);
+checks++;
+assert.equal(lq("#send-link").disabled, true);
+checks++;
+lq("#send-link").click();
+assert.equal(login.sends(), 1);
+checks++;
+lq("#auth-code").value = "12";
+lq("#otp-form").dispatchEvent(
+  new lw.Event("submit", { bubbles: true, cancelable: true }),
+);
+assert.equal(login.verifications(), 0);
+checks++;
+lq("#auth-code").value = "000000";
+lq("#otp-form").dispatchEvent(
+  new lw.Event("submit", { bubbles: true, cancelable: true }),
+);
+await wait(() => lq("#otp-state").textContent.includes("inválido"));
+assert.equal(lw.BAP_APP.state().user, null);
+checks++;
+assert.equal(lq("#auth-code").value, "");
+checks++;
+lq("#auth-code").value = "135790";
+lq("#otp-form").dispatchEvent(
+  new lw.Event("submit", { bubbles: true, cancelable: true }),
+);
+await wait(() => lw.BAP_APP.state().user && !lq("#account-dialog").open);
+assert.equal(lq("#auth-code").value, "");
+checks++;
+assert.equal(lq("#otp-form").hidden, true);
+checks++;
+assert.equal(
+  Array.from({ length: lw.localStorage.length }, (_, i) =>
+    lw.localStorage.getItem(lw.localStorage.key(i)),
+  ).some((v) => v.includes("135790")),
+  false,
+);
+checks++;
+await wait(() => !lq("#finance-sync").textContent.includes("Sincronizando"));
+login.dom.window.close();
 console.log(
   `Client integration: ${checks} checks passed (synthetic DOM and mock API).`,
 );

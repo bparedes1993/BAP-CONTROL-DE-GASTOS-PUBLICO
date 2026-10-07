@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
-    "test": "node finance-model.test.js && node commercial.test.mjs && node access-ui.test.mjs"
+    "test": "node finance-model.test.js && node commercial.test.mjs && node sync-and-admin.test.mjs && node sync-client.test.mjs && node access-ui.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

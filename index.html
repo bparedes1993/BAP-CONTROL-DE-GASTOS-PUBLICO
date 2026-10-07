@@ -530,12 +530,31 @@
               autocomplete="email"
               placeholder="tu@correo.com" /></label
           ><button class="primary" id="send-link" type="button">
-            Enviar enlace de acceso
+            Enviar acceso por correo
           </button>
+          <form id="otp-form" hidden>
+            <label class="auth-label"
+              >Código recibido
+              <input
+                id="auth-code"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6,8}"
+                minlength="6"
+                maxlength="8"
+                required
+              />
+            </label>
+            <button class="primary" id="verify-code" type="submit">
+              Verificar código
+            </button>
+            <p class="auth-help" id="otp-state" role="status"></p>
+          </form>
           <p class="auth-help">
-            El enlace verifica tu correo. Después podrás solicitar un plan en Mi
-            acceso. Usa la misma cuenta en ambos dispositivos. El envío a
-            clientes requiere el correo de producción de BAP.
+            Usa el código o enlace de un solo uso que recibas para verificar tu
+            correo. Después podrás solicitar un plan en Mi acceso. Si no llega,
+            revisa spam o contacta a BAP.
           </p>
         </div>
         <div class="account-actions">
@@ -640,6 +659,7 @@
     <script src="supabase-client.js" defer></script>
     <script src="xlsx.js" defer></script>
     <script src="finance-model.js" defer></script>
+    <script src="sync-client.js" defer></script>
     <script src="commercial.js" defer></script>
     <script src="app.js" defer></script>
     <script src="finance.js" defer></script>

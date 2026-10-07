@@ -48,6 +48,7 @@
     selected = null,
     factor = null,
     operation = null;
+  let claimCheckedUser = null;
   const demo = () => !!app().demo;
   function canWrite() {
     const s = app();
@@ -152,6 +153,7 @@
     if (!s.user || !s.cloud) {
       snapshot = null;
       knownUser = null;
+      claimCheckedUser = null;
       paint();
       return null;
     }
@@ -160,6 +162,12 @@
     knownUser = id;
     inFlight = (async () => {
       try {
+        if (claimCheckedUser !== id) {
+          const claim = await s.cloud.rpc("bap_claim_admin_authorization");
+          if (claim.error) throw claim.error;
+          if (app().user?.id !== id) return null;
+          claimCheckedUser = id;
+        }
         const { data, error } = await s.cloud.rpc("bap_my_access");
         if (error) throw error;
         if (app().user?.id !== id) return null;

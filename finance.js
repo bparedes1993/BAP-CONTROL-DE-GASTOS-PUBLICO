@@ -55,7 +55,10 @@
       tx.onabort = () => reject(tx.error);
     });
   }
-  const load = () => transact("readonly", (s) => s.getAll());
+  const load = async () =>
+    (await transact("readonly", (s) => s.getAll())).filter(
+      (r) => !window.BAP_SYNC.isMeta(r),
+    );
   const put = (r) => transact("readwrite", (s) => s.put(r));
   const notify = (s) => window.BAP_APP?.notice(s);
   function allowed(write = true) {
@@ -174,28 +177,21 @@
           await put(latest);
         }
       }
-      let offset = 0,
-        downloaded = [];
-      while (true) {
-        let { data, error } = await s.cloud
-          .from("finance_entries")
-          .select("*")
-          .order("id")
-          .range(offset, offset + 499);
-        if (error) throw error;
-        downloaded.push(...data);
-        if (data.length < 500) break;
-        offset += 500;
-      }
-      if (owner() !== id) return;
-      for (const r of downloaded) {
-        const local = records.find((x) => x.id === r.id);
-        if (
-          !local ||
-          !local.dirty ||
-          Date.parse(r.updated_at) > Date.parse(local.updated_at)
-        )
-          await put({
+      await window.BAP_SYNC.pull({
+        db,
+        store: "records",
+        userId: id,
+        cloud: s.cloud,
+        kind: "finance",
+        active: () => owner() === id,
+        merge: (r) => {
+          const local = records.find((x) => x.id === r.id);
+          if (
+            local?.dirty &&
+            Date.parse(r.updated_at) <= Date.parse(local.updated_at)
+          )
+            return null;
+          return {
             id: r.id,
             owner_id: r.user_id,
             kind: r.kind,
@@ -203,8 +199,10 @@
             updated_at: r.updated_at,
             deleted: r.deleted,
             dirty: false,
-          });
-      }
+          };
+        },
+      });
+      if (owner() !== id) return;
       records = await load();
       status = !window.BAP_ACCESS?.canWrite()
         ? "Solo lectura · consulta Mi acceso"
@@ -888,6 +886,7 @@
     async clearOwner(id) {
       for (const r of records.filter((r) => r.owner_id === id))
         await transact("readwrite", (s) => s.delete(r.id));
+      await window.BAP_SYNC.clearCursor(db, "records", id);
       records = await load();
       render();
     },

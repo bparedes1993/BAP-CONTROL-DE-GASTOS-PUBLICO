@@ -1,6 +1,6 @@
 # Control comercial de BAP Gastos
 
-Estado al 06/10/2026: implementación y migración comercial preparadas y comprobadas. La instalación inicial conserva **modo piloto** (`enforcement=false`) y no asigna administradores. El control obligatorio requiere que el titular autorice su rol, configure segundo factor y revise las cuentas existentes. No hay cobros automáticos ni correos comerciales automáticos.
+Estado al 07/10/2026: implementación y migración comercial preparadas y comprobadas. La instalación inicial conserva **modo piloto** (`enforcement=false`) y no asigna administradores. El control obligatorio requiere que el titular autorice su rol, configure segundo factor y revise las cuentas existentes. No hay cobros automáticos ni correos comerciales automáticos.
 
 ## Flujo de cliente
 
@@ -15,7 +15,7 @@ Los planes iniciales tienen precios vacíos: **mensual de 30 días**, **semestra
 ## Activar al titular
 
 1. Obtener su autorización explícita para el rol administrativo. La identidad debe corresponder a una cuenta de BAP con correo verificado; no basta iniciar sesión en el Dashboard de Supabase.
-2. Ejecutar `commercial-bootstrap.sql`, sustituyendo su marcador por el correo autorizado. No publicar la variante con el correo personal ni ninguna credencial. La migración `commercial.sql` no asigna roles por sí sola.
+2. Ejecutar `admin-authorizations.sql` y luego `commercial-bootstrap.sql`, sustituyendo su marcador por el correo autorizado. Si la cuenta ya está verificada, asigna el rol. Si aún no existe, reserva una autorización de un solo uso por 30 días, que se reclama al verificar el correo e iniciar sesión. No crea usuarios ni confirma correos. Borrar/recrear la cuenta no permite reclamar una autorización ya consumida. No publicar la variante privada ni credenciales. Ver SMTP.md.
 3. El titular inicia sesión en BAP. En **Administración**, pulsa **Configurar / verificar segundo factor**, guarda el factor en su aplicación autenticadora y verifica el código. Nunca compartirlo con el soporte ni en el chat.
 4. Cargar solicitudes, aprobar primero las cuentas que deben conservar acceso y configurar precios.
 5. Activar **Control obligatorio** solo después de revisar las cuentas actuales y probar el flujo con dos cuentas descartables. El servidor comprueba el plan; ocultar un botón no es la protección.
@@ -38,10 +38,16 @@ Cada plan tiene un límite inicial de 5,000 registros de gastos y 5,000 financie
 
 Los gastos/fotos y finanzas tienen respaldos separados. Para restaurar compras a crédito en otra base, restaurar **primero finanzas**, esperar su sincronización y luego gastos; el servidor valida la tarjeta vinculada. Con control comercial activo, se requiere verificar la autorización en línea al abrir la app; sin esa consulta se conserva lectura local y exportación, pero se bloquean nuevas modificaciones. Los cambios pendientes solo se suben cuando hay autorización.
 
+## Sincronización incremental
+
+`incremental-sync.sql` agrega versiones del servidor, índices por usuario y un RPC que entrega solo filas posteriores al cursor del dispositivo. Los datos existentes conservan versión cero; la primera consulta los descarga por páginas. Se incluyen borrados y se conservan los permisos de lectura propia al vencer. Los cursores y datos de cada página se confirman juntos en IndexedDB; un fallo permite reintentar sin saltarse registros. Los datos del cursor no aparecen en reportes ni respaldos.
+
+El RPC y las escrituras autenticadas usan un bloqueo por usuario para no avanzar sobre cambios sin confirmar. Las páginas de gastos tienen hasta 5 filas por las fotografías; las financieras, hasta 100. Las fotos permanecen en la base y requieren una migración posterior a almacenamiento privado antes de ampliar volumen. No se ha medido concurrencia ni sustituido las pruebas de carga.
+
 ## Pruebas y alcance
 
 Ejecutar `npm ci` y `npm test`. La prueba comercial levanta PostgreSQL aislado mediante PGlite y usa correos `.invalid`; no toca datos de producción. Cubre permisos anónimos, autoactivación, MFA administrativo, aislamiento, expiración, suspensión, duplicación de operaciones y pagos, límites y validación de datos. No simula carga de cientos de clientes ni comprueba la entrega de SMTP.
 
-La suite incluye 17 comprobaciones del cliente con DOM sintético y API simulada para acceso activo, pendiente/vencido, exportación conservada y demo aislada. La comprobación completa de correo, MFA y dos dispositivos se realiza después con cuentas de prueba.
+La suite incluye comprobaciones del cliente con DOM sintético y API simulada para acceso activo, pendiente/vencido, exportación conservada y demo aislada. La comprobación completa de correo, MFA y dos dispositivos se realiza después con cuentas de prueba.
 
 Referencias: [SMTP de Supabase](https://supabase.com/docs/guides/auth/auth-smtp), [MFA](https://supabase.com/docs/guides/auth/auth-mfa), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).
