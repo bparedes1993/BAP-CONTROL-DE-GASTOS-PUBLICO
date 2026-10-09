@@ -1,4 +1,4 @@
-const CACHE = "bap-google-planes-v11";
+const CACHE = "bap-google-activo-v12";
 const ASSETS = [
   "./",
   "./index.html",
@@ -59,3 +59,4 @@ self.addEventListener("fetch", (event) => {
     })(),
   );
 });
+

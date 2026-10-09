@@ -1,6 +1,6 @@
 # Acceso con Google y planes
 
-07/10/2026: el código de Google está incorporado y probado con API simulada. El proveedor de Supabase aún requiere un cliente OAuth creado por el titular. El botón permanece deshabilitado con un aviso hasta completar esa configuración; no se anuncia un inicio de sesión real como validado.
+09/10/2026: el titular informó que guardó el cliente OAuth. Se confirmó en Supabase que el proveedor Google está habilitado, las opciones Skip nonce checks y Allow users without an email están desactivadas y Site URL/Redirect URL apuntan a la web de Cloudflare. Esta versión habilita el botón con `googleLoginEnabled: true` y actualiza la caché PWA. El inicio de sesión completo, el retorno a BAP, la reclamación administrativa y MFA siguen pendientes de una prueba real del titular; las pruebas automatizadas usan Auth/API simulados.
 
 ## Configuración del titular
 
@@ -37,3 +37,4 @@ Google verifica la identidad sin depender del SMTP de BAP para ese inicio. El ac
 Ejecutar `npm ci` y `npm test`. Las pruebas usan una base aislada, DOM y Auth/API simulados; no certifican Google real. Con cuentas descartables, comprobar retorno de Google en celular y computadora, registro sin plan, aprobación con MFA, expiración, aislamiento entre cuentas y exportación. Completar aviso legal, condiciones, soporte y respaldos antes de cobrar. Ver [SECURITY.md](SECURITY.md) y [COMERCIAL.md](COMERCIAL.md).
 
 Referencias: [Google en Supabase](https://supabase.com/docs/guides/auth/social-login/auth-google), [audiencia de Google](https://support.google.com/cloud/answer/15549945).
+

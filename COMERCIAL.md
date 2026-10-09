@@ -1,10 +1,10 @@
 # Control comercial de BAP Gastos
 
-Estado al 07/10/2026: catálogo de planes y registro de cuentas verificadas al entrar incorporados. La instalación inicial conserva modo piloto; `commercial-enforce.sql` activa el control por petición del titular sin aprobar cuentas ni registrar pagos. El control obligatorio fue activado en este proyecto el 07/10/2026 por petición del titular: sin aprobación vigente solo se conserva consulta y exportación. La autorización administrativa reservada necesita inicio de sesión verificado y segundo factor. Google espera configuración del titular; ver [GOOGLE.md](GOOGLE.md). No hay cobros automáticos ni correos comerciales automáticos.
+Estado al 09/10/2026: catálogo de planes y registro de cuentas verificadas al entrar incorporados. La instalación inicial conserva modo piloto; `commercial-enforce.sql` activa el control por petición del titular sin aprobar cuentas ni registrar pagos. El control obligatorio fue activado en este proyecto el 07/10/2026 por petición del titular: sin aprobación vigente solo se conserva consulta y exportación. La autorización administrativa reservada necesita inicio de sesión verificado y segundo factor. Google está habilitado en Supabase y en esta versión de la web; su prueba completa con una cuenta real sigue pendiente. Ver [GOOGLE.md](GOOGLE.md). No hay cobros automáticos ni correos comerciales automáticos.
 
 ## Flujo de cliente
 
-1. Entra en la URL de Cloudflare e inicia sesión. Google estará disponible después de configurar el proveedor; el acceso alternativo por correo requiere SMTP. La identidad verificada no acredita un pago ni activa un plan. La cuenta aparece en Administración aunque aún no solicite plan.
+1. Entra en la URL de Cloudflare e inicia sesión. El botón de Google está habilitado; el acceso alternativo por correo requiere SMTP. La identidad verificada no acredita un pago ni activa un plan. La cuenta aparece en Administración aunque aún no solicite plan.
 2. En **Mi acceso**, selecciona un plan y pulsa **Enviar solicitud de plan**. La solicitud queda pendiente en el servidor. No envía un correo al administrador: aparece en su panel.
 3. BAP acuerda precio y condiciones y comprueba el pago recibido por fuera de la aplicación, si corresponde.
 4. El administrador aprueba o renueva la vigencia. El cliente actualiza **Mi acceso** y ve su estado. Cuando el control está activo, solo un acceso vigente permite crear, editar, restaurar y sincronizar cambios.
@@ -51,3 +51,4 @@ Ejecutar `npm ci` y `npm test`. La prueba comercial levanta PostgreSQL aislado m
 La suite incluye comprobaciones del cliente con DOM sintético y API simulada para acceso activo, pendiente/vencido, exportación conservada y demo aislada. La comprobación completa de correo, MFA y dos dispositivos se realiza después con cuentas de prueba.
 
 Referencias: [SMTP de Supabase](https://supabase.com/docs/guides/auth/auth-smtp), [MFA](https://supabase.com/docs/guides/auth/auth-mfa), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).
+

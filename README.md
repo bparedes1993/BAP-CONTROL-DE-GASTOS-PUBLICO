@@ -2,9 +2,9 @@
 
 Aplicación web adaptable e instalable para registrar gastos desde celular y computadora.
 
-## Control comercial (07/10/2026)
+## Control comercial (09/10/2026)
 
-Incluye Mi acceso, catálogo de planes, registro de clientes al entrar, vigencias, pago manual registrado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación base conserva modo piloto; en este proyecto el control obligatorio se activó en Supabase el 07/10/2026 por petición del titular mediante `commercial-enforce.sql`. Las cuentas sin plan aprobado conservan lectura/exportación y no pueden guardar cambios. La configuración de Google está preparada y el botón espera las credenciales OAuth en Supabase; ver [GOOGLE.md](GOOGLE.md). El acceso alternativo admite código o enlace por correo; SMTP sigue requiriendo credencial y prueba de entrega. Incluye autorización administrativa reservada y sincronización incremental. Ver [SMTP.md](SMTP.md). No hay cobros automáticos.
+Incluye Mi acceso, catálogo de planes, registro de clientes al entrar, vigencias, pago manual registrado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación base conserva modo piloto; en este proyecto el control obligatorio se activó en Supabase el 07/10/2026 por petición del titular mediante `commercial-enforce.sql`. Las cuentas sin plan aprobado conservan lectura/exportación y no pueden guardar cambios. Google está habilitado en Supabase y esta versión activa el botón de acceso; falta comprobar el ingreso completo con una cuenta real. Ver [GOOGLE.md](GOOGLE.md). El acceso alternativo admite código o enlace por correo; SMTP sigue requiriendo credencial y prueba de entrega. Incluye autorización administrativa reservada y sincronización incremental. Ver [SMTP.md](SMTP.md). No hay cobros automáticos.
 
 Pruebas: `npm ci` y `npm test`. El SQL está documentado en `commercial.sql` y el rol inicial en `commercial-bootstrap.sql`; no ejecutar la asignación sin autorización del titular.
 
@@ -29,16 +29,16 @@ En la carpeta del proyecto, ejecutar `python -m http.server 8000` y abrir `http:
 
 ## Privacidad y límites
 
-La aplicación usa una cuenta de correo para sincronizar gastos cuando Supabase está configurado. También conserva una copia local para trabajar sin conexión. Haz respaldo JSON regularmente. Borrar los datos del navegador elimina los registros locales. La lectura OCR descarga Tesseract.js y sus modelos desde servicios externos y procesa la imagen en el navegador; no se envía a un backend de BAP. La precisión varía con la fotografía. El PDF se produce mediante impresión del navegador. Esta versión no importa movimientos bancarios, no emite comprobantes ni se conecta a SUNAT.
+La aplicación usa una cuenta verificada de Google o correo para sincronizar gastos cuando Supabase está configurado. También conserva una copia local para trabajar sin conexión. Haz respaldo JSON regularmente. Borrar los datos del navegador elimina los registros locales. La lectura OCR descarga Tesseract.js y sus modelos desde servicios externos y procesa la imagen en el navegador; no se envía a un backend de BAP. La precisión varía con la fotografía. El PDF se produce mediante impresión del navegador. Esta versión no importa movimientos bancarios, no emite comprobantes ni se conecta a SUNAT.
 
 ## Sincronización automática (opcional)
 
-La aplicación incluye inicio de sesión por enlace al correo y sincronización en ambos sentidos. Para activarla:
+La aplicación incluye inicio de sesión con Google, acceso alternativo por código/enlace al correo y sincronización en ambos sentidos. Para activarla:
 
 1. El proyecto Supabase ya está creado. La tabla `expenses` y sus políticas de acceso por usuario ya están configuradas; `supabase.sql` documenta el esquema.
 2. `config.js` ya contiene la URL del proyecto y la clave publicable. **Nunca coloques una `service_role` o `secret key` en el navegador ni en GitHub.**
 3. La aplicación está disponible en https://bap-control-de-gastos-publico.brparedes1993.workers.dev/; esta dirección figura como Site URL y Redirect URL en Supabase. La anterior de GitHub Pages permanece temporalmente en Redirect URLs. El proveedor Email está habilitado.
-4. Abre la aplicación en cada dispositivo, pulsa **Sincronización**, inicia sesión con la misma cuenta verificada en ambos equipos (Google tras configurarlo, o correo con SMTP). Con un plan vigente, el primer dispositivo asociará sus registros locales a la cuenta y los subirá. El segundo descargará esos registros. Comprueba que aparecen en ambos antes de borrar datos locales.
+4. Abre la aplicación en cada dispositivo, pulsa **Sincronización**, inicia sesión con la misma cuenta verificada en ambos equipos (Google, o correo con SMTP). Con un plan vigente, el primer dispositivo asociará sus registros locales a la cuenta y los subirá. El segundo descargará esos registros. Comprueba que aparecen en ambos antes de borrar datos locales.
 
 Los cambios pendientes se guardan localmente y se reintentan al volver internet, al volver a abrir la pestaña y cada 30 segundos mientras la app está abierta. Cuando la tabla está habilitada en Supabase Realtime, el otro dispositivo recibe una señal y consulta enseguida los cambios autorizados; el temporizador sigue como respaldo. Las eliminaciones se sincronizan mediante registros de borrado. Si dos dispositivos modifican el mismo registro a la vez, prevalece el cambio con la fecha de modificación más reciente. El inicio de sesión y la primera descarga requieren conexión. No uses perfiles compartidos entre distintas cuentas; conserva un respaldo antes de cambiar de cuenta. Las fotografías comprimidas se almacenan con el gasto en la base en línea; vigila el espacio del proyecto. Los gastos existentes pueden editarse desde el botón **Editar** de cada movimiento.
 
@@ -46,7 +46,7 @@ Si `config.js` queda vacío, la aplicación continúa en modo local. El reposito
 
 ## Preparación para comercializar
 
-La publicación en GitHub Pages queda para demostración y uso personal; el servicio comercial utiliza la dirección de Cloudflare indicada arriba. Antes de ofrecerlo a clientes, completa Google según GOOGLE.md y prueba el flujo de alta y sincronización con dos dispositivos reales. Configura SMTP si ofrecerás acceso alternativo por correo. No hay cobros automáticos. El módulo comercial implementa planes y límites en el servidor; el control obligatorio está activo, pero faltan Google real, administrador con MFA y las pruebas de salida antes de vender. Prepara aviso de privacidad, términos y contacto de soporte y verifica el procedimiento de eliminación de cuenta antes de invitar clientes.
+La publicación en GitHub Pages queda para demostración y uso personal; el servicio comercial utiliza la dirección de Cloudflare indicada arriba. Antes de ofrecerlo a clientes, prueba el ingreso real con Google según GOOGLE.md y el flujo de alta y sincronización con dos dispositivos reales. Configura SMTP si ofrecerás acceso alternativo por correo. No hay cobros automáticos. El módulo comercial implementa planes y límites en el servidor; el control obligatorio está activo, pero faltan la prueba completa de Google real, administrador con MFA y las pruebas de salida antes de vender. Prepara aviso de privacidad, términos y contacto de soporte y verifica el procedimiento de eliminación de cuenta antes de invitar clientes.
 
 ## Estado de publicación y privacidad
 
@@ -63,3 +63,4 @@ La app escucha únicamente cambios de `expenses` filtrados por el ID de la cuent
 ## Siguiente etapa comercial
 
 Consulta [ARQUITECTURA_Y_VENTA.md](ARQUITECTURA_Y_VENTA.md) para la separación de Gastos, Legal y Contable, los requisitos previos a la venta y las pruebas de salida del piloto.
+

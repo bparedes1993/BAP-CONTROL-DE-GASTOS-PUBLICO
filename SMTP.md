@@ -1,8 +1,8 @@
 # Correo de acceso y administración
 
-Actualización: 07/10/2026. El correo solicitado para administración es `contacto.bapsoluciones@gmail.com`. La autorización administrativa se reserva en el servidor y solo se reclama mediante una cuenta de BAP con ese correo **verificado**. Es de un solo uso, vence en 30 días si no se reclama y no vuelve a habilitarse tras eliminar/recrear la cuenta. Las decisiones comerciales continúan exigiendo MFA. No crea usuarios ni marca correos como confirmados.
+Actualización: 09/10/2026. El correo solicitado para administración es `contacto.bapsoluciones@gmail.com`. La autorización administrativa se reserva en el servidor y solo se reclama mediante una cuenta de BAP con ese correo **verificado**. Es de un solo uso, vence en 30 días si no se reclama y no vuelve a habilitarse tras eliminar/recrear la cuenta. Las decisiones comerciales continúan exigiendo MFA. No crea usuarios ni marca correos como confirmados.
 
-Se ha elegido incorporar Google como acceso principal: ese flujo no necesita que BAP envíe un correo SMTP. Requiere configurar el cliente OAuth y proveedor según [GOOGLE.md](GOOGLE.md). SMTP queda para el acceso alternativo por correo. No se han completado ni probado los secretos de ninguno de estos proveedores. Con PKCE, los enlaces nuevos por correo se abren en el mismo navegador que los solicitó; el código puede introducirse en esa sesión.
+Se ha elegido incorporar Google como acceso principal: ese flujo no necesita que BAP envíe un correo SMTP. El titular informó que guardó el cliente OAuth y se verificó el proveedor Google habilitado en Supabase; esta versión activa su botón. Falta la prueba completa con una cuenta real, según [GOOGLE.md](GOOGLE.md). SMTP queda para el acceso alternativo por correo: su credencial y entrega real siguen pendientes. Con PKCE, los enlaces nuevos por correo se abren en el mismo navegador que los solicitó; el código puede introducirse en esa sesión.
 
 ## SMTP para el piloto sin comprar dominio
 
@@ -40,3 +40,4 @@ La web acepta código por correo mediante `verifyOtp` y sigue admitiendo el enla
 El SMTP transmite mensajes de autenticación al proveedor; no almacena ni cifra los registros de gastos. Los permisos RLS, funciones protegidas, validación en servidor y MFA resguardan el acceso a los datos. Cifrado de copias locales, almacenamiento privado de fotos, respaldos completos, pruebas de carga y evaluación externa siguen requiriendo trabajo adicional.
 
 Referencias: [SMTP de Supabase](https://supabase.com/docs/guides/auth/auth-smtp), [OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless), [plantillas](https://supabase.com/docs/guides/auth/auth-email-templates), [contraseñas de aplicación de Google](https://support.google.com/accounts/answer/185833), [límites de Gmail](https://support.google.com/mail/answer/22839).
+
