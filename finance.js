@@ -273,7 +273,10 @@
         a.cashBudget,
       ) +
       row("Pagos de deuda ya registrados", a.payments) +
-      row("Cuotas o mínimos pendientes del mes", a.pending) +
+      row(
+        "Obligaciones y reserva para tarjetas pendientes del período",
+        a.pending,
+      ) +
       (a.lent ? row("Dinero prestado durante el mes", a.lent) : "") +
       row("Reserva para imprevistos", a.reserve) +
       row("Abono adicional propuesto", a.extra) +
@@ -293,7 +296,7 @@
     if (!a.deficit && a.planReady && a.savings > 0)
       advice += `<div class="finance-advice-item"><strong>Distribuye según tus prioridades</strong>${a.totalDebt > 0 ? "Mantén el ahorro para imprevistos y metas cercanas; compara el costo de la deuda antes de asumir riesgo de inversión." : reserveHave < reserveTarget ? "Prioriza completar tu reserva antes de invertir dinero que puedes necesitar pronto." : "Separa metas de corto plazo y ahorro de largo plazo. Antes de elegir inversiones, define plazo, tolerancia a pérdidas y necesidad de liquidez; este panel no recomienda productos específicos."}</div>`;
     const first = a.ordered[0];
-    if (first && !a.missingRates && a.planReady) {
+    if (first && !first.schedules.length && !a.missingRates && a.planReady) {
       const proj = M.project(
         first,
         a.allocations.find((x) => x.id === first.id)?.extra || 0,
@@ -331,6 +334,7 @@
     const eventRows = rs.filter(
       (r) =>
         !r.deleted &&
+        !r.data.schedule_only &&
         ["payment", "disbursement", "charge"].includes(r.kind) &&
         r.data.date?.slice(0, 7) === period,
     );
@@ -343,10 +347,27 @@
       ),
     );
   }
+  function scheduleView(d) {
+    const period = q("#month").value || day().slice(0, 7);
+    const plans =
+      d.schedules || M.schedules(d, active(), state().expenses, period, day());
+    return plans
+      .map(
+        (
+          p,
+        ) => `<details class="installment-schedule"><summary>${esc(p.data.name)} · ${p.paidCount} pagadas / ${p.pendingCount} pendientes</summary>
+      <p class="finance-help">${p.data.installment_amount != null ? "Cuota bancaria ingresada; confirma intereses y cargos en tu estado de cuenta." : "Estimación: TEA fija convertida a tasa mensual, meses iguales; sin seguros ni comisiones."} ${p.data.paid_before ? "Incluye " + p.data.paid_before + " cuotas históricas declaradas, sin generar movimientos." : ""}</p>
+      ${p.stale || p.invalid ? '<p class="finance-advice-item warning">Revisa este cronograma: la compra cambió, fue eliminada o los datos no son válidos.</p>' : ""}
+      ${p.overpaid > 0 ? `<p class="finance-advice-item warning">Pagos que exceden el cronograma: ${fmt(p.overpaid)}. Concilia con el banco.</p>` : ""}
+      <div class="installment-scroll"><table><caption>Cuotas de ${esc(p.data.name)}</caption><thead><tr><th>Cuota</th><th>Vence</th><th>Importe</th><th>Pagado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${p.items.map((i) => `<tr><td>${i.number}/${p.data.installments}</td><td>${esc(i.due)}</td><td>${fmt(i.amount)}</td><td>${fmt(i.paid)}</td><td>${fmt(i.remaining)}</td><td>${esc(i.status)}</td></tr>`).join("")}</tbody></table></div>
+      <button class="text-btn" data-fin-edit="${esc(p.id)}">Editar cronograma</button><button class="text-btn" data-fin-delete="${esc(p.id)}">Eliminar cronograma</button></details>`,
+      )
+      .join("");
+  }
   function debtCard(d, isLoan) {
     const x = d.data,
       b = d.balance;
-    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">Saldo actual según tu registro · S/</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc(x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible según saldo" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div>` : ""}</dl><div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div></article>`;
+    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">Saldo actual según tu registro · S/</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc(x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible según saldo" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
   }
   function events(rows) {
     return (
@@ -381,12 +402,113 @@
     edit = id ? active().find((r) => r.id === id) : null;
     context = debtId || edit?.data.debt_id;
     formKind = kind;
+    if (edit?.data.schedule_only) {
+      kind = "schedule";
+      formKind = "schedule";
+    }
     const d = edit?.data || {},
       moneyOpts = 'min="0" max="999999999" step="0.01"',
       required = moneyOpts + " required";
     let fields = "",
       help = "",
       title = "";
+    if (kind === "schedule") {
+      const debt = active().find((r) => r.id === context);
+      if (!debt || debt.kind !== "debt") return;
+      const used = new Set(
+        active()
+          .filter((r) => r.data.schedule_only && r.id !== edit?.id)
+          .map((r) => r.data.expense_id),
+      );
+      const expenses = state().expenses.filter(
+        (e) => !e.deleted && e.credit_id === debt.id && !used.has(e.id),
+      );
+      if (debt.data.type === "card" && !expenses.length)
+        return notify(
+          "Primero registra el gasto con esta tarjeta. Cada compra solo puede tener un cronograma activo.",
+        );
+      if (
+        debt.data.type !== "card" &&
+        active().some(
+          (r) =>
+            r.data.schedule_only &&
+            r.data.debt_id === debt.id &&
+            r.id !== edit?.id,
+        )
+      )
+        return notify(
+          "Este préstamo ya tiene cronograma. Edítalo para actualizar sus condiciones.",
+        );
+      title =
+        debt.data.type === "card"
+          ? "Cuotas de una compra registrada"
+          : "Cronograma del préstamo";
+      fields =
+        (debt.data.type === "card"
+          ? select(
+              "expense_id",
+              "Compra a programar",
+              expenses.map((e) => [
+                e.id,
+                e.date + " · " + e.merchant + " · " + fmt(e.amount),
+              ]),
+              d.expense_id || expenses[0]?.id,
+            )
+          : "") +
+        field(
+          "name",
+          "Nombre del cronograma",
+          "text",
+          d.name || debt.data.name,
+          'required maxlength="100"',
+        ) +
+        (debt.data.type !== "card"
+          ? field(
+              "amount",
+              "Capital original del cronograma (S/)",
+              "number",
+              d.amount ?? debt.data.balance,
+              required.replace('min="0"', 'min="0.01"'),
+            )
+          : "") +
+        field(
+          "installments",
+          "Número total de cuotas",
+          "number",
+          d.installments || 1,
+          'required min="1" max="360" step="1"',
+        ) +
+        field(
+          "paid_before",
+          "Cuotas pagadas antes de registrar el cronograma",
+          "number",
+          d.paid_before ?? 0,
+          'required min="0" max="359" step="1"',
+        ) +
+        field(
+          "first_due",
+          "Vencimiento de la primera cuota (cuota 1)",
+          "date",
+          d.first_due || debt.data.due || day(),
+          "required",
+        ) +
+        field(
+          "tea",
+          "TEA de esta operación % (0 = sin intereses)",
+          "number",
+          d.tea ?? debt.data.tea,
+          'min="0" max="2000" step="0.01"',
+        ) +
+        field(
+          "installment_amount",
+          "Cuota bancaria confirmada (S/), opcional",
+          "number",
+          d.installment_amount,
+          moneyOpts,
+        );
+      help =
+        "No agrega deuda ni duplica el gasto. Elige la primera fecha de pago según el cierre del banco. La cuota bancaria ingresada prevalece sobre el cálculo por TEA. Sin cuota bancaria se estima una cuota fija, sin seguros ni comisiones. Las cuotas históricas no generan pagos; el saldo base debe reflejar lo realmente pendiente.";
+    }
     if (kind === "income") {
       title = "Registrar ingreso cobrado";
       fields =
@@ -471,6 +593,22 @@
           moneyOpts,
         ) +
         field("due", "Próximo vencimiento, opcional", "date", d.due) +
+        (kind === "debt"
+          ? field(
+              "monthly_budget",
+              "Presupuesto mensual reservado para esta cuenta (S/)",
+              "number",
+              d.monthly_budget,
+              moneyOpts,
+            ) +
+            field(
+              "monthly_base",
+              "Otros compromisos mensuales fuera de cronogramas (S/)",
+              "number",
+              d.monthly_base,
+              moneyOpts,
+            )
+          : "") +
         field(
           "tea",
           "TEA % (0 si sin interés; vacío si desconocida)",
@@ -495,7 +633,7 @@
             )
           : "");
       help =
-        "El saldo base no genera un ingreso ni una salida de efectivo. Debe ser anterior a los movimientos del día base: la app suma compras/cargos/desembolsos y resta capital desde esa fecha, inclusive. Para conciliar, usa un saldo y fecha que no dupliquen movimientos. La TEA debe venir del contrato, no sustituirla por TCEA.";
+        "El saldo base no genera un ingreso ni una salida de efectivo. Debe ser anterior a los movimientos del día base: la app suma compras/cargos/desembolsos y resta capital desde esa fecha, inclusive. Para conciliar, usa un saldo y fecha que no dupliquen movimientos. La TEA debe venir del contrato, no sustituirla por TCEA. Otros compromisos se suman a las cuotas; no incluyas ahí importes ya programados. El mínimo del banco es un piso, no se suma otra vez.";
     }
     if (["payment", "disbursement", "charge"].includes(kind)) {
       const debt = active().find((r) => r.id === context);
@@ -536,9 +674,26 @@
           d.date || day(),
           'required max="' + day() + '" min="' + esc(debt.data.date) + '"',
         );
+      if (kind === "payment" && debt.kind === "debt") {
+        const plans = active().filter(
+          (r) =>
+            r.kind === "charge" &&
+            r.data.schedule_only &&
+            r.data.debt_id === debt.id,
+        );
+        fields += select(
+          "schedule_id",
+          "Aplicar pago a cronograma",
+          [
+            ["", "Sin asignar / otro saldo"],
+            ...plans.map((p) => [p.id, p.data.name]),
+          ],
+          d.schedule_id || "",
+        );
+      }
       help =
         kind === "payment"
-          ? "El capital reduce el saldo. La diferencia entre total y capital representa intereses/cargos; consulta el comprobante. Si dejas capital vacío, se registra el efectivo sin reducir todavía la deuda. Actualiza el próximo vencimiento y mínimo desde Editar después de cada ciclo."
+          ? "El capital reduce el saldo. La diferencia entre total y capital representa intereses/cargos; consulta el comprobante. Si dejas capital vacío, se registra el efectivo sin reducir todavía la deuda. Si eliges un cronograma, el importe se aplica a sus cuotas pendientes en orden, incluso si el pago es parcial. Si pagas varias compras en una sola operación, registra sus partes por separado: la suma debe coincidir con el comprobante. Actualiza el mínimo con el estado de cuenta."
           : kind === "charge"
             ? "Aumenta el saldo sin movimiento de efectivo; no vuelvas a sumarlo si ya está incluido en el saldo base."
             : "Aumenta el saldo y registra la entrada (préstamo recibido) o salida (dinero prestado) de efectivo. No lo registres también como ingreso o gasto.";
@@ -631,9 +786,15 @@
       "emergency",
       "targetMonths",
       "debtPercent",
+      "monthly_budget",
+      "monthly_base",
+      "installments",
+      "paid_before",
+      "installment_amount",
     ];
     for (const k of numeric)
       if (k in data) data[k] = data[k] === "" ? null : Number(data[k]);
+    if (data.schedule_id === "") delete data.schedule_id;
     if (context) data.debt_id = context;
     const err = q("#finance-error");
     err.textContent = "";
@@ -644,6 +805,78 @@
       return (err.textContent =
         "El capital debe estar entre cero y el importe total.");
     const debt = active().find((r) => r.id === context);
+    if (formKind === "schedule" && debt) {
+      data.schedule_only = true;
+      data.date = edit?.data.date || day();
+      if (debt.data.type === "card") {
+        const purchase = state().expenses.find(
+          (x) =>
+            !x.deleted && x.id === data.expense_id && x.credit_id === debt.id,
+        );
+        if (!purchase)
+          return (err.textContent = "Compra vinculada no disponible.");
+        if (
+          active().some(
+            (r) =>
+              r.id !== edit?.id &&
+              r.data.schedule_only &&
+              r.data.expense_id === purchase.id,
+          )
+        )
+          return (err.textContent = "Esta compra ya tiene un cronograma.");
+        data.amount = purchase.amount;
+      }
+      if (data.paid_before >= data.installments)
+        return (err.textContent =
+          "Las cuotas históricas deben ser menores al total.");
+      if (data.tea == null && data.installment_amount == null)
+        return (err.textContent =
+          "Completa la TEA o la cuota bancaria confirmada.");
+      if (
+        edit &&
+        active().some(
+          (r) => r.kind === "payment" && r.data.schedule_id === edit.id,
+        )
+      ) {
+        const keys = [
+          "amount",
+          "installments",
+          "paid_before",
+          "first_due",
+          "tea",
+          "installment_amount",
+          "expense_id",
+        ];
+        if (keys.some((k) => (data[k] ?? null) !== (edit.data[k] ?? null)))
+          return (err.textContent =
+            "Este cronograma tiene pagos. Concilia o desvincula esos pagos antes de modificar sus condiciones.");
+      }
+    }
+    if (formKind === "payment" && data.schedule_id) {
+      const plan = active().find(
+        (r) =>
+          r.id === data.schedule_id &&
+          r.data.schedule_only &&
+          r.data.debt_id === context,
+      );
+      if (!plan) return (err.textContent = "Cronograma no disponible.");
+      const summary = M.schedules(
+        debt,
+        visible().filter((r) => r.id !== edit?.id),
+        state().expenses,
+        day().slice(0, 7),
+        day(),
+      ).find((p) => p.id === plan.id);
+      if (!summary || summary.stale || summary.invalid)
+        return (err.textContent =
+          "Corrige el cronograma antes de asignar un pago.");
+      if (
+        data.amount >
+        M.round(summary.items.reduce((sum, i) => sum + i.remaining, 0)) + 0.005
+      )
+        return (err.textContent =
+          "El importe supera las cuotas pendientes. Registra el excedente como pago a otro saldo.");
+    }
     if (formKind === "payment" && debt) {
       let rows = visible().filter((r) => r.id !== edit?.id),
         b = M.balance(debt, rows, state().expenses);
@@ -660,12 +893,14 @@
         formKind === "settings"
           ? edit?.id || owner() || "00000000-0000-4000-8000-000000000001"
           : edit?.id;
-      await save(formKind, data, id);
+      await save(formKind === "schedule" ? "charge" : formKind, data, id);
       q("#finance-editor").close();
       notify("Registro financiero guardado.");
     } catch (e) {
       err.textContent =
-        "No se pudo guardar; revisa el almacenamiento del navegador.";
+        e.message === "Registro inválido"
+          ? "Revisa importes, fechas y condiciones del cronograma."
+          : "No se pudo guardar; revisa el almacenamiento del navegador.";
       console.error(e);
     } finally {
       q("#finance-save").disabled = false;
@@ -700,6 +935,15 @@
       if (!allowed()) return;
       const r = active().find((r) => r.id === b.dataset.finDelete);
       if (!r) return;
+      if (
+        r.data.schedule_only &&
+        active().some(
+          (x) => x.kind === "payment" && x.data.schedule_id === r.id,
+        )
+      )
+        return notify(
+          "Desvincula los pagos de este cronograma antes de eliminarlo.",
+        );
       if (
         ["debt", "receivable"].includes(r.kind) &&
         (active().some((x) => x.data.debt_id === r.id) ||
@@ -789,6 +1033,34 @@
           !allIds.has(r.data.debt_id)
         )
           throw Error("Cuenta vinculada ausente");
+      const merged = [
+        ...active().filter((r) => !backup.records.some((x) => x.id === r.id)),
+        ...backup.records.filter((r) => !r.deleted),
+      ];
+      const linkedExpenses = new Set();
+      for (const r of merged) {
+        if (r.data.schedule_only) {
+          const account = merged.find(
+            (d) => d.id === r.data.debt_id && d.kind === "debt",
+          );
+          if (!account) throw Error("Cuenta de cronograma ausente");
+          if (r.data.expense_id) {
+            if (linkedExpenses.has(r.data.expense_id))
+              throw Error("Cronograma duplicado");
+            linkedExpenses.add(r.data.expense_id);
+          }
+        }
+        if (
+          r.data.schedule_id &&
+          !merged.some(
+            (p) =>
+              p.id === r.data.schedule_id &&
+              p.data.schedule_only &&
+              p.data.debt_id === r.data.debt_id,
+          )
+        )
+          throw Error("Cronograma de pago ausente");
+      }
       if (
         !confirm(
           "¿Restaurar estos registros financieros en la cuenta actual? Los ID coincidentes se reemplazarán.",
@@ -823,11 +1095,12 @@
   };
   function reportRows() {
     const period = q("#month").value;
-    return active()
+    const dataRows = active()
       .filter(
         (r) =>
           r.kind !== "settings" &&
-          (["debt", "receivable"].includes(r.kind) ||
+          (r.data.schedule_only ||
+            ["debt", "receivable"].includes(r.kind) ||
             r.data.date?.slice(0, 7) === period),
       )
       .map((r) => [
@@ -842,7 +1115,41 @@
         r.data.tea ?? "",
         r.data.due || "",
         r.data.note || "",
+        r.data.schedule_only ? r.data.installments : "",
+        r.data.schedule_only ? r.data.paid_before : "",
+        r.data.first_due || "",
+        r.data.installment_amount ?? "",
+        r.data.monthly_budget ?? "",
+        active().find((p) => p.id === r.data.schedule_id)?.data.name || "",
+        "",
+        "",
       ]);
+    const installmentRows = active()
+      .filter((r) => r.kind === "debt")
+      .flatMap((d) =>
+        M.schedules(d, active(), state().expenses, period, day()).flatMap((p) =>
+          p.items.map((i) => [
+            i.due,
+            "cuota " + i.number + "/" + p.data.installments,
+            p.data.name,
+            i.amount,
+            i.principal ?? "",
+            "",
+            p.data.tea ?? "",
+            i.due,
+            i.status,
+            p.data.installments,
+            p.data.paid_before,
+            p.data.first_due,
+            p.data.installment_amount ?? "",
+            "",
+            d.data.name,
+            i.paid,
+            i.remaining,
+          ]),
+        ),
+      );
+    return [...dataRows, ...installmentRows];
   }
   q("#finance-excel").onclick = () => {
     if (!allowed(false)) return;
@@ -861,6 +1168,14 @@
           "TEA %",
           "Vencimiento",
           "Nota",
+          "Total cuotas",
+          "Cuotas históricas",
+          "Primera cuota",
+          "Cuota bancaria S/",
+          "Presupuesto mensual S/",
+          "Cronograma del pago",
+          "Pagado cuota S/",
+          "Pendiente cuota S/",
         ],
         rows,
         [3, 4, 5, 6],
@@ -876,7 +1191,7 @@
       w = window.open("", "_blank");
     if (!w) return notify("Permite ventanas emergentes para exportar PDF.");
     w.document.write(
-      `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>BAP · Plan financiero</title><style>body{font:13px/1.6 Arial;color:#172b47;margin:35px}h1{font-size:27px}h2{margin-top:26px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #dce5ec}th{background:#edf3f5}.finance-row{display:flex;justify-content:space-between;padding:9px;border-bottom:1px solid #eee}.allocation-track{display:none}.plan-remainder{padding:15px;background:#edf3f5}p{color:#5c7185}.finance-advice-item{margin:10px 0;padding:10px;background:#f5f7fa}button{display:none}@page{size:A4;margin:18mm}</style></head><body><h1>BAP · Plan financiero</h1><p>Período ${esc(q("#month").value)} · Emitido ${esc(day())} · Saldos actuales según registro</p><h2>Distribución propuesta</h2>${q("#finance-plan").innerHTML}<h2>Guía y supuestos</h2>${q("#finance-advice").innerHTML}<h2>Deudas</h2><table><thead><tr><th>Cuenta</th><th>Saldo</th><th>Cuota registrada</th><th>Vence</th></tr></thead><tbody>${a.debts.map((d) => `<tr><td>${esc(d.data.name)}</td><td>${fmt(d.balance)}</td><td>${d.data.minimum == null ? "Desconocida" : fmt(d.data.minimum)}</td><td>${esc(d.data.due || "Pendiente")}</td></tr>`).join("")}</tbody></table><p>Orientación automática. La simulación excluye nuevas compras, comisiones y cambios de tasa. No constituye un cronograma bancario.</p><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"></script></body></html>`,
+      `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>BAP · Plan financiero</title><style>body{font:13px/1.6 Arial;color:#172b47;margin:35px}h1{font-size:27px}h2{margin-top:26px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #dce5ec}th{background:#edf3f5}.finance-row{display:flex;justify-content:space-between;padding:9px;border-bottom:1px solid #eee}.allocation-track{display:none}.plan-remainder{padding:15px;background:#edf3f5}p{color:#5c7185}.finance-advice-item{margin:10px 0;padding:10px;background:#f5f7fa}button{display:none}@page{size:A4;margin:18mm}</style></head><body><h1>BAP · Plan financiero</h1><p>Período ${esc(q("#month").value)} · Emitido ${esc(day())} · Saldos actuales según registro</p><h2>Distribución propuesta</h2>${q("#finance-plan").innerHTML}<h2>Guía y supuestos</h2>${q("#finance-advice").innerHTML}<h2>Deudas</h2><table><thead><tr><th>Cuenta</th><th>Saldo</th><th>Cuota registrada</th><th>Vence</th></tr></thead><tbody>${a.debts.map((d) => `<tr><td>${esc(d.data.name)}</td><td>${fmt(d.balance)}</td><td>${d.data.minimum == null ? "Desconocida" : fmt(d.data.minimum)}</td><td>${esc(d.data.due || "Pendiente")}</td></tr>`).join("")}</tbody></table><h2>Cronogramas de cuotas</h2>${a.debts.map((d) => `<h3>${esc(d.data.name)}</h3>${scheduleView(d).replaceAll("<details ", "<details open ")}`).join("")}<p>Orientación automática. La simulación excluye nuevas compras, comisiones y cambios de tasa. No constituye un cronograma bancario.</p><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"></script></body></html>`,
     );
     w.document.close();
   };

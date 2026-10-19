@@ -1,4 +1,4 @@
-const CACHE = "bap-google-activo-v12";
+const CACHE = "bap-cuotas-v13";
 const ASSETS = [
   "./",
   "./index.html",
@@ -59,4 +59,5 @@ self.addEventListener("fetch", (event) => {
     })(),
   );
 });
+
 

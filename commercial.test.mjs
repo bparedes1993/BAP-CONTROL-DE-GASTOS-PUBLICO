@@ -296,6 +296,24 @@ assert.equal(await scalar("select public.bap_can_write()"), false);
 checks++;
 await denied(expenseSQL, ["40000000-0000-4000-8000-000000000009", A]);
 await denied("select public.bap_request_access('monthly')");
+await db.exec("reset role");
+assert.equal(
+  await scalar("select bap_private.validate_finance($1::jsonb,'charge')", [
+    JSON.stringify({
+      date: "2026-10-19",
+      amount: 600,
+      debt_id: A,
+      name: "Cronograma",
+      schedule_only: true,
+      installments: 6,
+      paid_before: 0,
+      first_due: "2026-11-20",
+      tea: 0,
+    }),
+  ]),
+  true,
+);
+checks++;
 await db.close();
 console.log(
   `Commercial access and security: ${checks} checks passed (isolated PostgreSQL/PGlite; no production data).`,

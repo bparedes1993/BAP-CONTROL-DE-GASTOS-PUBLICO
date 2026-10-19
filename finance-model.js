@@ -14,11 +14,155 @@
       (r) =>
         !r.deleted && r.data.debt_id === debt.id && r.data.date >= base.date,
     )) {
-      if (r.kind === "disbursement" || r.kind === "charge")
+      if (
+        r.kind === "disbursement" ||
+        (r.kind === "charge" && !r.data.schedule_only)
+      )
         amount += n(r.data.amount);
       if (r.kind === "payment") amount -= n(r.data.principal);
     }
     return round(Math.max(0, amount));
+  }
+  // A schedule is metadata in an existing charge record, never a second purchase.
+  function dueDate(first, offset) {
+    const [y, m, d] = first.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1 + offset, 1));
+    const last = new Date(
+      Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+  }
+  function scheduleItems(data) {
+    const count = data.installments;
+    if (!Number.isInteger(count) || count < 1 || count > 360)
+      throw Error("Número de cuotas inválido");
+    const rate =
+      data.tea == null ? null : Math.pow(1 + data.tea / 100, 1 / 12) - 1;
+    if (data.installment_amount == null && rate == null)
+      throw Error("Completa la TEA o la cuota bancaria");
+    const fixed =
+      data.installment_amount ??
+      (rate === 0
+        ? data.amount / count
+        : (data.amount * rate) / (1 - Math.pow(1 + rate, -count)));
+    // Confirmed bank installments may include insurance/fees; do not invent a principal split.
+    const bank = data.installment_amount != null;
+    let principal = data.amount;
+    return Array.from({ length: count }, (_, i) => {
+      const interest = bank ? null : round(principal * rate);
+      const amount = bank
+        ? round(fixed)
+        : i === count - 1
+          ? round(principal + interest)
+          : round(fixed);
+      const capital = bank ? null : round(amount - interest);
+      if (!bank) principal = round(principal - capital);
+      return {
+        number: i + 1,
+        due: dueDate(data.first_due, i),
+        amount,
+        principal: capital,
+        interest,
+        bank,
+      };
+    });
+  }
+  function schedules(debt, rows, expenses, period, today) {
+    const end = dueDate(period + "-01", 1); // exclusive end of selected month
+    return rows
+      .filter(
+        (r) =>
+          !r.deleted &&
+          r.kind === "charge" &&
+          r.data.schedule_only === true &&
+          r.data.debt_id === debt.id,
+      )
+      .map((r) => {
+        const d = r.data;
+        const expense = d.expense_id
+          ? expenses.find(
+              (e) =>
+                !e.deleted && e.id === d.expense_id && e.credit_id === debt.id,
+            )
+          : null;
+        const stale =
+          !!d.expense_id &&
+          (!expense || round(expense.amount) !== round(d.amount));
+        let items;
+        try {
+          items = scheduleItems(d);
+        } catch {
+          return {
+            ...r,
+            invalid: true,
+            items: [],
+            required: 0,
+            paidCount: 0,
+            pendingCount: 0,
+          };
+        }
+        const payments = rows.filter(
+          (p) =>
+            !p.deleted &&
+            p.kind === "payment" &&
+            p.data.schedule_id === r.id &&
+            p.data.debt_id === debt.id &&
+            p.data.date <= today,
+        );
+        let available = Math.round(
+          payments.reduce((sum, p) => sum + n(p.data.amount), 0) * 100,
+        );
+        let periodAvailable = Math.round(
+          payments
+            .filter((p) => p.data.date < end)
+            .reduce((sum, p) => sum + n(p.data.amount), 0) * 100,
+        );
+        const before = n(d.paid_before);
+        items = items.map((item, i) => {
+          const cents = Math.round(item.amount * 100);
+          const paid = i < before ? cents : Math.min(cents, available);
+          const periodPaid =
+            i < before ? cents : Math.min(cents, periodAvailable);
+          if (i >= before) {
+            available -= paid;
+            periodAvailable -= periodPaid;
+          }
+          const remaining = (cents - paid) / 100;
+          return {
+            ...item,
+            paid: paid / 100,
+            remaining,
+            periodRemaining: (cents - periodPaid) / 100,
+            status:
+              remaining === 0
+                ? "Pagada"
+                : paid > 0
+                  ? "Parcial"
+                  : item.due < today
+                    ? "Vencida"
+                    : "Pendiente",
+          };
+        });
+        return {
+          ...r,
+          items,
+          stale,
+          invalid: false,
+          paidCount: items.filter((i) => i.remaining === 0).length,
+          pendingCount: items.filter((i) => i.remaining > 0).length,
+          overpaid: available / 100,
+          required: round(
+            items
+              .filter((i) => i.due < end)
+              .reduce((sum, i) => sum + i.periodRemaining, 0),
+          ),
+          monthTotal: round(
+            items
+              .filter((i) => month(i.due) === period)
+              .reduce((sum, i) => sum + i.amount, 0),
+          ),
+        };
+      });
   }
   function analyze(rows, expenses, period, day) {
     rows = rows.filter(
@@ -51,13 +195,54 @@
           .filter((x) => x.kind === "payment" && x.data.debt_id === r.id)
           .reduce((a, x) => a + n(x.data.amount), 0);
         const b = balance(r, rows, expenses);
-        const required = Math.max(0, n(r.data.minimum));
+        const plans = schedules(r, rows, expenses, period, day);
+        const scheduledPending = round(
+          plans.reduce((sum, p) => sum + p.required, 0),
+        );
+        const legacyPending = Math.min(
+          b,
+          Math.max(0, n(r.data.minimum) - paid),
+        );
+        const otherPaid = inMonth
+          .filter(
+            (x) =>
+              x.kind === "payment" &&
+              x.data.debt_id === r.id &&
+              !x.data.schedule_id,
+          )
+          .reduce((sum, x) => sum + n(x.data.amount), 0);
+        const remaining = round(
+          Math.max(
+            legacyPending,
+            scheduledPending + Math.max(0, n(r.data.monthly_base) - otherPaid),
+          ),
+        );
+        const required = Math.max(
+          0,
+          n(r.data.minimum),
+          n(r.data.monthly_base) +
+            plans.reduce((sum, p) => sum + p.monthTotal, 0),
+        );
         return {
           ...r,
           balance: b,
           paid: round(paid),
-          remaining: round(Math.min(b, Math.max(0, required - paid))),
-          overdue: !!r.data.due && r.data.due < day && paid < required && b > 0,
+          remaining,
+          schedules: plans,
+          required,
+          monthlyTarget: round(Math.max(required, n(r.data.monthly_budget))),
+          budgetGap: round(Math.max(0, required - n(r.data.monthly_budget))),
+          budgetPending: round(
+            Math.max(remaining, n(r.data.monthly_budget) - paid),
+          ),
+          overdue:
+            (!!r.data.due &&
+              r.data.due < day &&
+              paid < n(r.data.minimum) &&
+              b > 0) ||
+            plans.some((p) =>
+              p.items.some((i) => i.due < day && i.remaining > 0),
+            ),
         };
       });
     const receivables = rows
@@ -112,7 +297,7 @@
         ),
     );
     const earned = round(directEarned + interestEarned);
-    const pending = round(debts.reduce((a, d) => a + d.remaining, 0)),
+    const pending = round(debts.reduce((a, d) => a + d.budgetPending, 0)),
       totalDebt = round(debts.reduce((a, d) => a + d.balance, 0));
     const incomeBase = settings.income == null ? earned : n(settings.income),
       cashBudget = Math.max(cashExpenses, n(settings.expenses));
@@ -124,9 +309,14 @@
         Math.min(Math.max(0, beforeReserve), n(settings.reserve)),
       ),
       surplus = round(Math.max(0, beforeReserve - reserve));
-    const active = debts.filter((d) => d.balance > 0);
+    const active = debts.filter((d) => d.balance > 0 || d.remaining > 0);
     const missingRates = active.some((d) => d.data.tea == null),
-      missingMinimums = active.some((d) => d.data.minimum == null),
+      missingMinimums = active.some(
+        (d) =>
+          d.data.minimum == null &&
+          !d.schedules.length &&
+          d.data.monthly_base == null,
+      ),
       missingDates = active.some((d) => !d.data.due);
     const strategy = settings.strategy || "avalanche";
     const ordered = [...active].sort(
@@ -148,7 +338,21 @@
       ),
     );
     const hasBudget = settings.expenses != null;
+    const incompleteSchedules = debts.some(
+      (d) =>
+        d.schedules.length &&
+        expenses.some(
+          (e) =>
+            e.credit_id === d.id &&
+            e.date >= d.data.date &&
+            !rows.some(
+              (r) => r.data.schedule_only && r.data.expense_id === e.id,
+            ),
+        ),
+    );
     const planReady =
+      !incompleteSchedules &&
+      !debts.some((d) => d.schedules.some((p) => p.stale || p.invalid)) &&
       !missingMinimums &&
       hasBudget &&
       incomeBase > 0 &&
@@ -180,6 +384,39 @@
     extra = round(extra - unassigned);
     const savings = planReady ? round(surplus - extra) : 0;
     const warnings = [];
+    if (incompleteSchedules)
+      warnings.push(
+        "Completa los cronogramas de las compras de esta tarjeta para habilitar la distribución de abonos adicionales.",
+      );
+    if (debts.some((d) => d.schedules.some((p) => p.stale || p.invalid)))
+      warnings.push(
+        "Un cronograma no coincide con su compra o contiene datos inválidos. Corrígelo antes de confiar en el presupuesto.",
+      );
+    if (
+      debts.some(
+        (d) =>
+          d.schedules.length &&
+          rows.some(
+            (r) =>
+              r.kind === "payment" &&
+              r.data.debt_id === d.id &&
+              !r.data.schedule_id,
+          ),
+      )
+    )
+      warnings.push(
+        "Hay pagos sin asignar a un cronograma: edítalos para actualizar las cuotas, sin volver a registrar el pago.",
+      );
+    if (
+      expenses.some(
+        (e) =>
+          e.credit_id &&
+          !rows.some((r) => r.data.schedule_only && r.data.expense_id === e.id),
+      )
+    )
+      warnings.push(
+        "Hay compras a crédito sin cronograma. El compromiso mensual puede estar incompleto; programa sus cuotas o registra el total facturado por el banco.",
+      );
     if (settings.income == null && earned === 0)
       warnings.push(
         "Registra ingresos cobrados o define un ingreso mensual para el escenario.",
@@ -223,10 +460,7 @@
       warnings.push(
         "Hay pagos sin desglose de capital. El efectivo sale o entra, pero el saldo no baja hasta registrar el capital o conciliar saldo y fecha base. Si pertenecen a una deuda activa, los abonos adicionales se mantienen bloqueados.",
       );
-    const totalRequired = debts.reduce(
-      (a, d) => a + Math.min(d.balance, n(d.data.minimum)),
-      0,
-    );
+    const totalRequired = debts.reduce((a, d) => a + d.required, 0);
     return {
       settings,
       earned,
@@ -331,6 +565,9 @@
       "emergency",
       "targetMonths",
       "debtPercent",
+      "monthly_budget",
+      "monthly_base",
+      "installment_amount",
     ])
       if (
         d[key] != null &&
@@ -361,9 +598,56 @@
       !/^[0-9a-f-]{36}$/i.test(d.debt_id || "")
     )
       return false;
+    const uuid = (v) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        v || "",
+      );
+    if (d.schedule_id != null && (r.kind !== "payment" || !uuid(d.schedule_id)))
+      return false;
+    if (d.schedule_only != null && d.schedule_only !== true) return false;
+    if (d.schedule_only === true) {
+      if (
+        r.kind !== "charge" ||
+        !goodDate(d.first_due) ||
+        !Number.isInteger(d.installments) ||
+        d.installments < 1 ||
+        d.installments > 360 ||
+        !Number.isInteger(d.paid_before) ||
+        d.paid_before < 0 ||
+        d.paid_before >= d.installments ||
+        typeof d.name !== "string" ||
+        !d.name.trim() ||
+        d.name.length > 100 ||
+        (d.expense_id != null && !uuid(d.expense_id)) ||
+        (d.installment_amount == null && d.tea == null) ||
+        (d.installment_amount != null && d.installment_amount <= 0)
+      )
+        return false;
+      if (
+        d.installment_amount != null &&
+        round(d.installment_amount * d.installments) + 0.01 < d.amount
+      )
+        return false;
+      try {
+        const items = scheduleItems(d);
+        if (items.some((i) => !Number.isFinite(i.amount) || i.amount <= 0))
+          return false;
+      } catch {
+        return false;
+      }
+    }
     return true;
   }
-  const api = { analyze, balance, project, round, validRecord };
+  const api = {
+    analyze,
+    balance,
+    project,
+    round,
+    validRecord,
+    dueDate,
+    scheduleItems,
+    schedules,
+  };
   root.BAP_FINANCE_MODEL = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

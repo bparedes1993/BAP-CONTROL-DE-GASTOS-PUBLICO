@@ -79,7 +79,10 @@ async function create(url, anonymous = false, options = {}) {
   };
   let currentUser = anonymous ? null : user,
     sends = 0,
-    verifications = 0, registrations = 0, oauth = [], clientOptions;
+    verifications = 0,
+    registrations = 0,
+    oauth = [],
+    clientOptions;
   const cloud = {
     auth: {
       onAuthStateChange: () => {},
@@ -113,7 +116,12 @@ async function create(url, anonymous = false, options = {}) {
         return { data: null, error: null };
       }
       if (name === "bap_request_access") {
-        entitlement = {...entitlement, requested_plan: args.p_plan, status: "pending", can_write: false};
+        entitlement = {
+          ...entitlement,
+          requested_plan: args.p_plan,
+          status: "pending",
+          can_write: false,
+        };
         return { data: entitlement, error: null };
       }
       if (name === "bap_pull_changes")
@@ -159,13 +167,23 @@ async function create(url, anonymous = false, options = {}) {
       },
     }),
   };
-  w.supabase = { createClient: (url, key, opts) => { clientOptions = opts; return cloud; } };
+  w.supabase = {
+    createClient: (url, key, opts) => {
+      clientOptions = opts;
+      return cloud;
+    },
+  };
   for (const [name, source] of scripts)
     w.eval(source + "\n//# sourceURL=" + name);
   await wait(() => w.BAP_APP?.state().configured || w.BAP_APP?.state().demo);
   if (!w.BAP_APP.state().demo && !anonymous)
     await wait(() => w.BAP_APP.state().user && w.BAP_ACCESS.snapshot());
-  await wait(() => !/Cargando|Abriendo|Sincronizando/.test(w.document.querySelector("#finance-sync").textContent));
+  await wait(
+    () =>
+      !/Cargando|Abriendo|Sincronizando/.test(
+        w.document.querySelector("#finance-sync").textContent,
+      ),
+  );
   return {
     w,
     dom,
@@ -191,7 +209,9 @@ assert.equal(f.registrations(), 1);
 checks++;
 assert.equal($("#access-catalog").hidden, false);
 checks++;
-$("#access-request").dispatchEvent(new w.Event("submit", {bubbles:true,cancelable:true}));
+$("#access-request").dispatchEvent(
+  new w.Event("submit", { bubbles: true, cancelable: true }),
+);
 await wait(() => !$("#request-access").disabled);
 assert.equal(w.BAP_ACCESS.canWrite(), false);
 assert.match($("#access-request-state").textContent, /Solicitud pendiente/);
@@ -245,6 +265,88 @@ await wait(() =>
 );
 checks++;
 await wait(() => !$("#finance-editor").open);
+// Full installment workflow through the actual forms, with isolated IndexedDB and mocked sync.
+async function submitFinance(values) {
+  for (const [name, value] of Object.entries(values))
+    w.document.querySelector(`#finance-form [name="${name}"]`).value =
+      String(value);
+  $("#finance-form").dispatchEvent(
+    new w.Event("submit", { bubbles: true, cancelable: true }),
+  );
+  await wait(() => !$("#finance-editor").open);
+}
+w.document.querySelector('[data-fin-tab="debts"]').click();
+w.document.querySelector('[data-fin-add="debt"]').click();
+await submitFinance({
+  name: "Tarjeta cuotas",
+  type: "card",
+  balance: 0,
+  date: "2026-10-01",
+  minimum: 0,
+  tea: 0,
+  monthly_budget: 80,
+  monthly_base: 0,
+});
+const cardId = w.BAP_FINANCE.cards()[0].id;
+$("#add").click();
+$("#amount").value = "600";
+$("#merchant").value = "Compra cuotas";
+$("#date").value = "2026-10-06";
+$("#expense-credit").value = cardId;
+$("#expense-form").dispatchEvent(
+  new w.Event("submit", { bubbles: true, cancelable: true }),
+);
+await wait(() =>
+  w.BAP_APP.state().expenses.some((e) => e.credit_id === cardId),
+);
+await wait(() => !$("#editor").open);
+w.document.querySelector('[data-fin-action="schedule"]').click();
+await submitFinance({
+  name: "Compra <img src=x onerror=alert(1)>",
+  installments: 6,
+  paid_before: 0,
+  first_due: "2026-10-20",
+  tea: 0,
+});
+assert.match($("#finance-debts").textContent, /0 pagadas \/ 6 pendientes/);
+checks++;
+assert.equal($("#finance-debts img"), null);
+checks++;
+assert.match($("#finance-debts").textContent, /20[,.]00/);
+checks++; // budget shortfall
+w.document.querySelector('[data-fin-action="payment"]').click();
+const planId = $("#f-schedule_id").options[1].value;
+await submitFinance({
+  amount: 40,
+  principal: 40,
+  date: "2026-10-10",
+  schedule_id: planId,
+});
+assert.match($("#finance-debts").textContent, /Parcial/);
+checks++;
+assert.match($("#finance-debts").textContent, /0 pagadas \/ 6 pendientes/);
+checks++;
+const scheduleEdit = w.document.querySelector(
+  `.installment-schedule [data-fin-edit="${planId}"]`,
+);
+scheduleEdit.click();
+$("#f-installments").value = "12";
+$("#finance-form").dispatchEvent(
+  new w.Event("submit", { bubbles: true, cancelable: true }),
+);
+assert.match($("#finance-error").textContent, /tiene pagos/);
+checks++;
+$("#finance-close").click();
+w.document
+  .querySelector(`.installment-schedule [data-fin-delete="${planId}"]`)
+  .click();
+assert(w.document.querySelector(".installment-schedule"));
+checks++;
+// Reload the user session and render from storage: allocations must survive.
+await w.BAP_ACCESS.refresh();
+w.dispatchEvent(new w.Event("bap:render"));
+await wait(() => $("#finance-debts").textContent.includes("Parcial"));
+checks++;
 f.set({
   status: "expired",
   can_write: false,
@@ -342,7 +444,10 @@ assert.equal(
 checks++;
 await wait(() => !lq("#finance-sync").textContent.includes("Sincronizando"));
 login.dom.window.close();
-const google = await create("https://app.example.invalid/?next=https://untrusted.example.invalid", true);
+const google = await create(
+  "https://app.example.invalid/?next=https://untrusted.example.invalid",
+  true,
+);
 google.w.document.querySelector("#account").click();
 google.w.document.querySelector("#sign-in-google").click();
 await wait(() => google.oauth().length === 1);
@@ -350,31 +455,50 @@ await wait(() => !google.w.document.querySelector("#sign-in-google").disabled);
 assert.equal(google.clientOptions().auth.flowType, "pkce");
 assert.equal(google.clientOptions().auth.detectSessionInUrl, true);
 assert.equal(google.oauth()[0].provider, "google");
-assert.equal(google.oauth()[0].options.redirectTo, "https://app.example.invalid/");
+assert.equal(
+  google.oauth()[0].options.redirectTo,
+  "https://app.example.invalid/",
+);
 assert.equal(google.oauth()[0].options.scopes, "openid email profile");
 assert.equal(google.w.BAP_APP.state().user, null);
 assert.equal(google.writeCount(), 0);
 checks += 7;
 google.dom.window.close();
-const staged = await create("https://app.example.invalid/", true, {google:false});
+const staged = await create("https://app.example.invalid/", true, {
+  google: false,
+});
 assert.equal(staged.w.document.querySelector("#sign-in-google").disabled, true);
 staged.w.document.querySelector("#sign-in-google").click();
 assert.equal(staged.oauth().length, 0);
 checks += 2;
 staged.dom.window.close();
 let finishOAuth;
-const failed = await create("https://app.example.invalid/", true, {oauthResult: () => new Promise((r) => { finishOAuth = r; })});
+const failed = await create("https://app.example.invalid/", true, {
+  oauthResult: () =>
+    new Promise((r) => {
+      finishOAuth = r;
+    }),
+});
 const gb = failed.w.document.querySelector("#sign-in-google");
-gb.click(); gb.click();
+gb.click();
+gb.click();
 assert.equal(failed.oauth().length, 1);
 assert.equal(gb.disabled, true);
-finishOAuth({error:{message:"PRIVATE-FIXTURE-PROVIDER-ERROR"}});
+finishOAuth({ error: { message: "PRIVATE-FIXTURE-PROVIDER-ERROR" } });
 await wait(() => !gb.disabled);
-assert.match(failed.w.document.querySelector("#google-state").textContent, /No se pudo iniciar/);
-assert.equal(failed.w.document.body.textContent.includes("PRIVATE-FIXTURE"), false);
+assert.match(
+  failed.w.document.querySelector("#google-state").textContent,
+  /No se pudo iniciar/,
+);
+assert.equal(
+  failed.w.document.body.textContent.includes("PRIVATE-FIXTURE"),
+  false,
+);
 checks += 4;
 failed.dom.window.close();
-const callback = await create("https://app.example.invalid/?code=SYNTHETIC-OAUTH-CODE&error_description=PRIVATE-FIXTURE#access_token=FAKE-FIXTURE");
+const callback = await create(
+  "https://app.example.invalid/?code=SYNTHETIC-OAUTH-CODE&error_description=PRIVATE-FIXTURE#access_token=FAKE-FIXTURE",
+);
 assert.equal(callback.w.location.search, "");
 assert.equal(callback.w.location.hash, "#mi-acceso");
 assert.equal(callback.w.BAP_ACCESS.canWrite(), false);

@@ -51,3 +51,22 @@ La eliminación de la cuenta en la nube borra los registros de ambas tablas por 
 Referencias educativas: https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/aprende-sobre-creditos y https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/el-sobrendeudamiento.
 
 Con control comercial activo, los cambios requieren una autorización vigente. Lectura y exportación propia se mantienen. Al restaurar una cuenta nueva, restaurar primero finanzas, esperar su sincronización y después gastos/fotos: el servidor comprueba la tarjeta vinculada.
+
+
+## Cronogramas de préstamos y compras en cuotas (octubre 2026)
+
+- En Tarjetas y deudas, Editar permite registrar un presupuesto mensual y otros compromisos fuera de cronogramas. Estos últimos NO deben contener las cuotas ya programadas.
+- Para una tarjeta: registrar primero el gasto eligiendo esa tarjeta como origen. Después usar **Programar compra registrada** en la tarjeta; elegir compra, cantidad de cuotas y vencimiento de la primera cuota según el banco. Solo un cronograma activo por compra.
+- Para un préstamo: usar **Crear cronograma**. Registrar el capital original, total de cuotas y primera fecha de vencimiento. El saldo base de la cuenta representa lo pendiente; el cronograma no agrega capital.
+- Si ya se pagaron cuotas antes de empezar, declarar su cantidad en cuotas históricas y utilizar un saldo base conciliado. No se crean entradas de efectivo ni pagos ficticios.
+- Se admite cuota bancaria confirmada (prevalece) o cálculo de cuota fija por TEA. TEA 0 representa financiamiento sin intereses. La estimación usa períodos mensuales iguales y excluye seguros/comisiones; no reemplaza el cronograma bancario. No se consultan bancos ni se obtienen tasas personales automáticamente.
+- Registrar pago permite elegir el cronograma: se aplica a las cuotas más antiguas, incluidos pagos parciales. El capital se ingresa según el comprobante y solo ese importe reduce el saldo. Si un pago cubre varias compras, registrar sus partes sin superar el total real del comprobante.
+- El compromiso mensual toma el mayor entre mínimo registrado y cuotas + otros compromisos, sin volver a sumar el mínimo. El plan reserva el mayor entre obligación pendiente y presupuesto pendiente de la cuenta. Incluye cuotas vencidas no cubiertas.
+- No se marcan cuotas pagadas por pasar el tiempo. Cambiar/eliminar la compra genera una advertencia. Las condiciones de cronogramas con pagos no se editan hasta conciliar o desvincular esos pagos.
+- PDF incluye cronogramas abiertos. Excel incluye datos del cronograma y todas sus cuotas con pagado/pendiente a la fecha. El respaldo JSON conserva las asignaciones.
+
+### Compatibilidad y límites
+
+Se utilizan metadatos de cronograma (`schedule_only: true`) dentro de registros `charge` ya admitidos por `finance_entries`. El modelo excluye esos metadatos del saldo y de cargos reales. No requiere tablas, credenciales ni políticas nuevas; conserva RLS y autorización comercial existentes. Todos los dispositivos deben recargar la versión actual antes de utilizar cronogramas: versiones anteriores no reconocen estos metadatos.
+
+La sincronización sigue usando resolución por fecha de modificación, no contabilidad transaccional. Antes de modificar desde otro dispositivo, esperar “Finanzas sincronizadas”. Las tasas referenciales públicas, conciliación automática del estado de cuenta y cálculo exacto de reglas particulares del banco quedan fuera de esta versión. Los pagos anticipados se reflejan como cuotas adelantadas; una reamortización bancaria requiere un cronograma nuevo conciliado.
