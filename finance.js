@@ -301,10 +301,18 @@
       row("Reserva para imprevistos", a.reserve) +
       row("Abono adicional propuesto", a.extra) +
       row("Ahorro / metas disponible", a.savings) +
-      `<div class="allocation-track" aria-hidden="true">${bars.map((b) => `<i style="width:${base ? (b.v / base) * 100 : 0}%;background:${b.c}"></i>`).join("")}</div><div class="plan-remainder"><span>${a.deficit ? "DÉFICIT DEL PRESUPUESTO" : a.planReady ? "EXCEDENTE DESPUÉS DE OBLIGACIONES Y RESERVA" : "DATOS PENDIENTES PARA DISTRIBUIR"}</span><strong>${a.deficit ? fmt(a.deficit) : a.planReady ? fmt(a.surplus) : "Completa los datos del plan"}</strong></div>`;
+      `<div class="allocation-track" aria-hidden="true">${bars.map((b) => `<i style="width:${base ? (b.v / base) * 100 : 0}%;background:${b.c}"></i>`).join("")}</div><div class="plan-remainder"><span>${a.deficitConfirmed ? "DÉFICIT DEL PRESUPUESTO" : a.planReady ? "EXCEDENTE DESPUÉS DE OBLIGACIONES Y RESERVA" : "DATOS PENDIENTES PARA DISTRIBUIR"}</span><strong>${a.deficitConfirmed ? fmt(a.deficit) : a.planReady ? fmt(a.surplus) : "Completa los datos del plan"}</strong></div>`;
     let advice = a.warnings
       .map((t) => `<div class="finance-advice-item warning">${esc(t)}</div>`)
       .join("");
+    const reviewPayments = new Map([...a.paymentsMissingSchedule, ...a.paymentsMissingCapital].map((r) => [r.id, r]));
+    for (const r of reviewPayments.values()) {
+      const debt = a.debts.find((d) => d.id === r.data.debt_id);
+      const reasons = [];
+      if (a.paymentsMissingSchedule.some((p) => p.id === r.id)) reasons.push("cronograma pendiente: selecciona sus cuotas o confirma que corresponde a otro saldo");
+      if (a.paymentsMissingCapital.some((p) => p.id === r.id)) reasons.push("capital pendiente: consulta el comprobante o concilia saldo y fecha base");
+      advice += `<div class="finance-advice-item warning"><strong>${esc(debt?.data.name || "Cuenta")} · ${esc(r.data.date)} · ${fmt(r.data.amount)}</strong><p>${esc(reasons.join(". "))}.</p><button type="button" data-fin-edit="${esc(r.id)}">Revisar pago</button></div>`;
+    }
     if (a.allocations.length)
       advice += `<div class="finance-advice-item"><strong>${a.settings.strategy === "snowball" ? "Bola de nieve · menor saldo primero" : "Avalancha · mayor TEA conocida primero"}</strong>${a.allocations.map((x) => `${esc(x.name)}: abono adicional ${fmt(x.extra)}`).join("<br>")}<br>Confirma con la entidad la aplicación al capital y sus condiciones. Este orden no compara comisiones ni condiciones especiales.</div>`;
     const reserveTarget =
@@ -407,7 +415,7 @@
                     ? "Dinero prestado"
                     : "Préstamo recibido"
                   : "Cargo a deuda";
-          return `<div class="finance-event"><div><strong>${esc(label)}${debt ? " · " + esc(debt.data.name) : ""}</strong><small>${esc(r.data.date)}${r.data.source ? " · " + esc(r.data.source) : ""}${r.kind === "payment" ? " · Capital: " + (r.data.principal == null ? "pendiente" : fmt(r.data.principal)) : ""}${r.data.note ? " · " + esc(r.data.note) : ""}</small></div><span>${fmt(r.data.amount)}</span><button class="text-btn" data-fin-edit="${esc(r.id)}">Editar</button><button class="delete" data-fin-delete="${esc(r.id)}" aria-label="Eliminar registro financiero">×</button></div>`;
+          return `<div class="finance-event"><div><strong>${esc(label)}${debt ? " · " + esc(debt.data.name) : ""}</strong><small>${esc(r.data.date)}${r.data.source ? " · " + esc(r.data.source) : ""}${r.kind === "payment" ? " · Capital: " + (r.data.principal == null ? "pendiente" : fmt(r.data.principal)) : ""}${r.kind === "payment" && r.data.schedule_id ? " · Cronograma: " + esc(active().find((p) => p.id === r.data.schedule_id)?.data.name || "Revisar vínculo") : r.kind === "payment" && r.data.payment_allocation === "other" ? " · Otro saldo confirmado" : ""}${r.data.note ? " · " + esc(r.data.note) : ""}</small></div><span>${fmt(r.data.amount)}</span><button class="text-btn" data-fin-edit="${esc(r.id)}">Editar</button><button class="delete" data-fin-delete="${esc(r.id)}" aria-label="Eliminar registro financiero">×</button></div>`;
         })
         .join("") ||
       '<div class="finance-empty">Sin movimientos en el período seleccionado.</div>'
@@ -705,10 +713,11 @@
           "schedule_id",
           "Aplicar pago a cronograma",
           [
-            ["", "Sin asignar / otro saldo"],
+            ["", "Pendiente de asignar"],
             ...plans.map((p) => [p.id, p.data.name]),
+            ["__other__", "Otro saldo de la cuenta (sin cronograma)"],
           ],
-          d.schedule_id || "",
+          d.schedule_id || (d.payment_allocation === "other" ? "__other__" : ""),
         );
       }
       help =
@@ -821,7 +830,11 @@
     ];
     for (const k of numeric)
       if (k in data) data[k] = data[k] === "" ? null : Number(data[k]);
-    if (data.schedule_id === "") delete data.schedule_id;
+    if (data.schedule_id === "__other__") {
+      delete data.schedule_id;
+      data.payment_allocation = "other";
+    } else if (data.schedule_id) data.payment_allocation = "schedule";
+    else delete data.schedule_id;
     const account = active().find(r => r.id === context);
     data.currency = formKind === "settings" ? selectedCurrency() : q("#f-currency")?.value || M.currency(edit?.data || account?.data);
     if (account && M.currency(account.data) !== data.currency) return (q("#finance-error").textContent = "El pago o movimiento debe estar en " + M.currency(account.data) + ", la moneda de esta cuenta. No se convierten importes automáticamente.");
@@ -1329,3 +1342,4 @@
     paintStatus();
   };
 })();
+

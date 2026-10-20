@@ -322,7 +322,7 @@
           !d.schedules.length &&
           d.data.monthly_base == null,
       ),
-      missingDates = active.some((d) => !d.data.due);
+      missingDates = active.some((d) => !d.data.due && !d.schedules.some((p) => !p.stale && !p.invalid && p.items.some((i) => i.remaining > 0)));
     const strategy = settings.strategy || "avalanche";
     const ordered = [...active].sort(
       (a, b) =>
@@ -333,15 +333,14 @@
         a.balance - b.balance,
     );
     // A missing rate prevents claiming the cheapest order. A missing installment prevents a safe surplus estimate.
-    const unknownCapital = active.some((d) =>
-      rows.some(
-        (r) =>
-          r.kind === "payment" &&
-          r.data.debt_id === d.id &&
-          r.data.date >= d.data.date &&
-          r.data.principal == null,
-      ),
-    );
+    // Only movements after the reconciled base can affect today's debt balance.
+    const relevantPayments = rows.filter((r) => r.kind === "payment" &&
+      debts.some((d) => d.id === r.data.debt_id && r.data.date >= d.data.date));
+    const paymentsMissingCapital = relevantPayments.filter((r) => r.data.principal == null);
+    const paymentsMissingSchedule = relevantPayments.filter((r) =>
+      !r.data.schedule_id && r.data.payment_allocation !== "other" &&
+      debts.some((d) => d.id === r.data.debt_id && d.schedules.length));
+    const unknownCapital = paymentsMissingCapital.some((r) => active.some((d) => d.id === r.data.debt_id));
     const hasBudget = settings.expenses != null;
     const incompleteSchedules = debts.some(
       (d) =>
@@ -397,21 +396,8 @@
       warnings.push(
         "Un cronograma no coincide con su compra o contiene datos inválidos. Corrígelo antes de confiar en el presupuesto.",
       );
-    if (
-      debts.some(
-        (d) =>
-          d.schedules.length &&
-          rows.some(
-            (r) =>
-              r.kind === "payment" &&
-              r.data.debt_id === d.id &&
-              !r.data.schedule_id,
-          ),
-      )
-    )
-      warnings.push(
-        "Hay pagos sin asignar a un cronograma: edítalos para actualizar las cuotas, sin volver a registrar el pago.",
-      );
+    if (paymentsMissingSchedule.length)
+      warnings.push(`${paymentsMissingSchedule.length} pago(s) sin asignar a un cronograma. Revisa los movimientos indicados; edita el pago existente sin duplicarlo.`);
     if (
       expenses.some(
         (e) =>
@@ -430,7 +416,8 @@
       warnings.push(
         "Completa tu presupuesto de gastos por efectivo/débito para no sobreestimar el excedente.",
       );
-    if (deficit > 0)
+    const deficitConfirmed = hasBudget && incomeBase > 0 && !missingMinimums && deficit > 0;
+    if (deficitConfirmed)
       warnings.push(
         "El presupuesto no cubre todos los gastos y pagos obligatorios. Reduce gastos revisables y consulta a tus acreedores antes de incumplir; no hay excedente para invertir.",
       );
@@ -461,7 +448,7 @@
       warnings.push(
         "Una tarjeta supera el límite registrado; revisa saldo, cargos y línea de crédito.",
       );
-    if (rows.some((r) => r.kind === "payment" && r.data.principal == null))
+    if (paymentsMissingCapital.length)
       warnings.push(
         "Hay pagos sin desglose de capital. El efectivo sale o entra, pero el saldo no baja hasta registrar el capital o conciliar saldo y fecha base. Si pertenecen a una deuda activa, los abonos adicionales se mantienen bloqueados.",
       );
@@ -490,6 +477,9 @@
       reserve,
       surplus,
       deficit,
+      deficitConfirmed,
+      paymentsMissingSchedule,
+      paymentsMissingCapital,
       extra,
       savings,
       allocations,
@@ -611,6 +601,7 @@
       );
     if (d.schedule_id != null && (r.kind !== "payment" || !uuid(d.schedule_id)))
       return false;
+    if (d.payment_allocation != null && (r.kind !== "payment" || !["other", "schedule"].includes(d.payment_allocation) || (d.payment_allocation === "other" && d.schedule_id))) return false;
     if (d.schedule_only != null && d.schedule_only !== true) return false;
     if (d.schedule_only === true) {
       if (
@@ -659,3 +650,4 @@
   root.BAP_FINANCE_MODEL = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
+

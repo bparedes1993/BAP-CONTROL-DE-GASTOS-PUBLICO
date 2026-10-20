@@ -377,6 +377,31 @@ await w.BAP_ACCESS.refresh();
 w.dispatchEvent(new w.Event("bap:render"));
 await wait(() => $("#finance-debts").textContent.includes("Parcial"));
 checks++;
+// Resolve an actionable warning by editing the same stored movement, without duplication.
+assert.equal(w.document.querySelector('#finance-advice [data-fin-edit]'), null);
+checks++;
+w.document.querySelector('[data-fin-action="payment"]').click();
+await submitFinance({amount:10,principal:10,date:"2026-10-11",schedule_id:""});
+const reviewButton = w.document.querySelector('#finance-advice [data-fin-edit]');
+assert(reviewButton);
+const reviewedId = reviewButton.dataset.finEdit;
+checks++;
+reviewButton.click();
+assert.equal($("#f-schedule_id").value, "");
+await submitFinance({schedule_id:planId});
+assert.equal(w.document.querySelector('#finance-advice [data-fin-edit]'), null);
+assert(w.document.querySelector(`[data-fin-edit="${reviewedId}"]`));
+checks+=2;
+// Explicitly classify another balance, then reload the session to check persistence.
+w.document.querySelector(`[data-fin-edit="${reviewedId}"]`).click();
+await submitFinance({schedule_id:"__other__"});
+await w.BAP_ACCESS.refresh();
+w.dispatchEvent(new w.Event("bap:render"));
+assert.equal(w.document.querySelector('#finance-advice [data-fin-edit]'), null);
+w.document.querySelector(`[data-fin-edit="${reviewedId}"]`).click();
+assert.equal($("#f-schedule_id").value, "__other__");
+$("#finance-close").click();
+checks+=2;
 // A separate USD ledger, including payments, schedules and its own budget.
 w.document.querySelector('[data-fin-add="debt"]').click();
 await submitFinance({name:"Préstamo USD",type:"loan",currency:"USD",balance:600,date:"2026-10-01",tea:0,minimum:0});
@@ -595,3 +620,4 @@ callback.dom.window.close();
 console.log(
   `Client integration: ${checks} checks passed (synthetic DOM and mock API).`,
 );
+
