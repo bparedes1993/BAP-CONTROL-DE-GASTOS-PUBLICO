@@ -1,4 +1,4 @@
-const CACHE = "bap-avisos-conciliacion-v15";
+const CACHE = "bap-sync-pagos-v16";
 const ASSETS = [
   "./",
   "./index.html",

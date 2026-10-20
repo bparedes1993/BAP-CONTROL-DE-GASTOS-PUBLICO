@@ -50,6 +50,8 @@ async function create(url, anonymous = false, options = {}) {
   w.HTMLDialogElement.prototype.close = function () {
     this.open = false;
   };
+  let rejectFinancePayments = false;
+  const financeWrites = [];
   let downloads = 0,
     remoteWrites = 0,
     rpcCount = 0;
@@ -167,7 +169,7 @@ async function create(url, anonymous = false, options = {}) {
       },
     }),
     removeChannel: () => {},
-    from: () => ({
+    from: (table) => ({
       select() {
         return this;
       },
@@ -179,7 +181,11 @@ async function create(url, anonymous = false, options = {}) {
       },
       range: async () => ({ data: [], error: null }),
       maybeSingle: async () => ({ data: null, error: null }),
-      upsert: async () => {
+      upsert: async (row) => {
+        if (table === "finance_entries") {
+          financeWrites.push(structuredClone(row));
+          if (rejectFinancePayments && row.kind === "payment") return {error:{code:"P0001",message:"El pago excede las cuotas pendientes"}};
+        }
         remoteWrites++;
         return { error: null };
       },
@@ -212,6 +218,8 @@ async function create(url, anonymous = false, options = {}) {
     },
     downloadCount: () => downloads,
     writeCount: () => remoteWrites,
+    financeWrites: () => financeWrites,
+    rejectPayments: (value) => { rejectFinancePayments = value; },
     rpcCount: () => rpcCount,
     sends: () => sends,
     verifications: () => verifications,
@@ -303,7 +311,9 @@ async function submitFinance(values) {
   $("#finance-form").dispatchEvent(
     new w.Event("submit", { bubbles: true, cancelable: true }),
   );
+  $("#finance-form").dispatchEvent(new w.Event("submit", {bubbles:true,cancelable:true}));
   await wait(() => !$("#finance-editor").open);
+  await new Promise(r => setTimeout(r, 0));
 }
 w.document.querySelector('[data-fin-tab="debts"]').click();
 w.document.querySelector('[data-fin-add="debt"]').click();
@@ -367,10 +377,12 @@ $("#finance-form").dispatchEvent(
 assert.match($("#finance-error").textContent, /tiene pagos/);
 checks++;
 $("#finance-close").click();
+w.confirm = () => false;
 w.document
   .querySelector(`.installment-schedule [data-fin-delete="${planId}"]`)
   .click();
 assert(w.document.querySelector(".installment-schedule"));
+w.confirm = () => true;
 checks++;
 // Reload the user session and render from storage: allocations must survive.
 await w.BAP_ACCESS.refresh();
@@ -420,6 +432,7 @@ $("#finance-form").dispatchEvent(new w.Event("submit",{bubbles:true,cancelable:t
 assert.match($("#finance-error").textContent,/USD/);
 assert.equal($("#finance-editor").open,true);
 checks+=2;
+await new Promise(r => setTimeout(r, 0));
 await submitFinance({currency:"USD",amount:40,principal:40,date:"2026-10-10",schedule_id:$("#f-schedule_id").options[1].value});
 assert.match($("#finance-debts").textContent,/560/);
 assert.match($("#finance-debts").textContent,/Parcial/);
@@ -438,6 +451,53 @@ $("#finance-settings").click();
 assert.equal($("#f-expenses").value,"20");
 $("#finance-close").click();
 checks+=2;
+// Removing a schedule preserves each payment and capital, unlinking it atomically.
+assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,1);
+checks++;
+const usdDelete = w.document.querySelector('.installment-schedule [data-fin-delete]');
+const usdPlanId = usdDelete.dataset.finDelete;
+usdDelete.click();
+await wait(() => !w.document.querySelector(`.installment-schedule [data-fin-delete="${usdPlanId}"]`));
+assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,1);
+assert.match($("#finance-debts").textContent,/560/);
+assert(!$("#finance-debt-events").textContent.includes('Cronograma:'));
+checks+=3;
+await w.BAP_ACCESS.refresh();w.dispatchEvent(new w.Event('bap:render'));
+await wait(() => !w.document.querySelector('.installment-schedule'));
+assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,1);
+checks++;
+await wait(() => f.financeWrites().some(r => r.id === usdPlanId && r.deleted));
+const deletionWrite = f.financeWrites().findIndex(r => r.id === usdPlanId && r.deleted);
+const unlinkWrite = f.financeWrites().findIndex(r => r.kind === 'payment' && r.data.currency === 'USD' && !r.data.schedule_id);
+assert(unlinkWrite >= 0 && unlinkWrite < deletionWrite);
+checks++;
+// One rejected payment must not block other valid records or the download pass.
+f.rejectPayments(true);
+w.document.querySelector('[data-fin-action="payment"]').click();
+await submitFinance({amount:10,principal:10,date:"2026-10-12",schedule_id:""});
+await wait(() => $("#finance-sync").textContent.includes('P0001'));
+assert.match($("#finance-sync").textContent,/supera las cuotas/);
+checks++;
+w.document.querySelector('[data-fin-add="income"]').click();
+await submitFinance({name:"Ingreso de prueba de cola",amount:50,date:"2026-10-12"});
+w.dispatchEvent(new w.Event('online'));
+await wait(() => f.financeWrites().some(r => r.data.name === 'Ingreso de prueba de cola'));
+checks++;
+await wait(() => $("#finance-sync").textContent.includes('Reintentar'));
+f.rejectPayments(false);
+$("#finance-sync").querySelector('button').click();
+await wait(() => $("#finance-sync").textContent === 'Finanzas sincronizadas');
+checks++;
+// Same-day identical payments are flagged for review, never silently removed.
+w.document.querySelector('[data-fin-action="payment"]').click();
+await submitFinance({amount:10,principal:10,date:"2026-10-12",schedule_id:""});
+assert.match($("#finance-advice").textContent,/Posibles pagos duplicados: 2 registros/);
+assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,3);
+checks+=2;
+$("#finance-advice").querySelector('[data-fin-delete]').click();
+await wait(() => !$("#finance-advice").textContent.includes('Posibles pagos duplicados'));
+assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,2);
+checks++;
 // Updating collection settings uses the current revision and doesn't approve a plan.
 f.set({is_admin:true,admin_verified:true});await w.BAP_ACCESS.refresh();
 $("#payment-methods-load").click();

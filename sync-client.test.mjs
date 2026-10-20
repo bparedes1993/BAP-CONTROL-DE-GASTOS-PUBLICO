@@ -135,8 +135,19 @@ assert.equal((await S.cursor(db, "expenses", A)).version, "-1");
 checks++;
 assert.equal((await all()).filter(S.isMeta).length, 0);
 checks++;
+// An old download must not overwrite an edit made after the request began.
+const dirtyEdit = {id:R1,user_id:A,amount:99,dirty:true,updated_at:"2026-10-20T19:00:02.000Z"};
+await S.commit(db,"expenses",A,[dirtyEdit],before);
+await S.commit(db,"expenses",A,[{...dirtyEdit,amount:10,dirty:false,updated_at:"2026-10-20T19:00:01.000Z"}],before);
+assert.equal((await all()).find(r=>r.id===R1).amount,99);
+assert.equal((await all()).find(r=>r.id===R1).dirty,true);
+checks+=2;
+await S.commit(db,"expenses",A,[{...dirtyEdit,amount:100,dirty:false,updated_at:"2026-10-20T19:00:03.000Z"}],before);
+assert.equal((await all()).find(r=>r.id===R1).amount,100);
+checks++;
 db.close();
 dom.window.close();
 console.log(
   `Cursor persistence and retries: ${checks} checks passed (synthetic DOM/IndexedDB).`,
 );
+

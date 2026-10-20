@@ -33,7 +33,15 @@
         reject(tx.error || Error("No se pudo guardar la página"));
       tx.onerror = () => {};
       try {
-        for (const row of rows) s.put(row);
+        for (const row of rows) {
+          // A download started before a local edit must never overwrite that edit.
+          const request = s.get(row.id);
+          request.onsuccess = () => {
+            const local = request.result;
+            if (local?.dirty && Date.parse(local.updated_at) >= Date.parse(row.updated_at)) return;
+            s.put(row);
+          };
+        }
         s.put({ id: key(userId), cursor: next });
       } catch (error) {
         tx.abort();
@@ -95,3 +103,4 @@
     clearCursor,
   });
 })();
+

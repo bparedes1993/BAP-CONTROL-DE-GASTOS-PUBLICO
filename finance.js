@@ -31,6 +31,10 @@
     connected = null,
     channel = null,
     busy = false,
+    syncQueued = false,
+    mutationClock = 0,
+    submitting = false,
+    syncIssues = [],
     status = "Cargando…",
     edit = null,
     context = null,
@@ -71,6 +75,20 @@
       (r) => !window.BAP_SYNC.isMeta(r),
     );
   const put = (r) => transact("readwrite", (s) => s.put(r));
+  const nextStamp = () => {
+    mutationClock = records.reduce((clock, r) => Math.max(clock, (Date.parse(r.updated_at) || 0) + 1), Math.max(Date.now(), mutationClock + 1));
+    return new Date(mutationClock).toISOString();
+  };
+  const acknowledge = (sent) => new Promise((resolve, reject) => {
+    const tx = db.transaction("records", "readwrite"), store = tx.objectStore("records"), request = store.get(sent.id);
+    request.onsuccess = () => {
+      const current = request.result;
+      if (current?.updated_at === sent.updated_at && current.deleted === sent.deleted && JSON.stringify(current.data) === JSON.stringify(sent.data)) store.put({...current, dirty:false});
+    };
+    tx.oncomplete = resolve;
+    tx.onabort = () => reject(tx.error);
+    tx.onerror = () => {};
+  });
   const notify = (s) => window.BAP_APP?.notice(s);
   function allowed(write = true) {
     if (write && !window.BAP_APP?.requireWrite()) return false;
@@ -89,7 +107,7 @@
       kind,
       data,
       owner_id: account,
-      updated_at: new Date().toISOString(),
+      updated_at: nextStamp(),
       deleted: false,
       dirty: true,
     };
@@ -160,17 +178,20 @@
   }
   async function sync() {
     const s = state();
-    if (!db || !s.cloud || !s.user || busy || !navigator.onLine) return;
+    if (!db || !s.cloud || !s.user || !navigator.onLine) return;
+    if (busy) { syncQueued = true; return; }
     const id = s.user.id;
     busy = true;
     status = "Sincronizando finanzas…";
     paintStatus();
     try {
-      const rank = r => ["debt", "receivable"].includes(r.kind) ? 0 : r.data.schedule_only ? 2 : ["payment", "disbursement", "charge"].includes(r.kind) ? 3 : 1;
+      syncIssues = [];
+      const rank = r => r.deleted && r.data.schedule_only ? 4 : ["debt", "receivable"].includes(r.kind) ? 0 : r.data.schedule_only ? 2 : ["payment", "disbursement", "charge"].includes(r.kind) ? 3 : 1;
       for (const r of records.filter(
         (r) => r.owner_id === id && r.dirty && window.BAP_ACCESS?.canWrite(),
       ).sort((a,b) => rank(a) - rank(b))) {
         if (owner() !== id || !window.BAP_ACCESS?.canWrite()) return;
+        try {
         let { data: remote, error } = await s.cloud
           .from("finance_entries")
           .select("updated_at")
@@ -191,10 +212,9 @@
           .from("finance_entries")
           .upsert(row, { onConflict: "id" });
         if (result.error) throw result.error;
-        const latest = records.find((x) => x.id === r.id);
-        if (latest?.updated_at === r.updated_at) {
-          latest.dirty = false;
-          await put(latest);
+        await acknowledge(r);
+        } catch (error) {
+          syncIssues.push({id:r.id, code:error.code || "NETWORK", message:error.message || ""});
         }
       }
       await window.BAP_SYNC.pull({
@@ -227,7 +247,7 @@
       status = !window.BAP_ACCESS?.canWrite()
         ? "Solo lectura · consulta Mi acceso"
         : records.some((r) => r.owner_id === id && r.dirty)
-          ? "Cambios pendientes"
+          ? `Sincronización pendiente · ${records.filter((r) => r.owner_id === id && r.dirty).length} registro(s) por enviar`
           : "Finanzas sincronizadas";
       render();
     } catch (e) {
@@ -238,11 +258,34 @@
       paintStatus();
     } finally {
       busy = false;
+      if (syncQueued) { syncQueued = false; sync(); }
     }
   }
   function paintStatus() {
     const el = q("#finance-sync");
     el.textContent = status;
+    if (status.includes("pendiente") || status === "Cambios pendientes") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "text-btn";
+      retry.textContent = "Reintentar sincronización";
+      retry.onclick = () => sync();
+      el.append(" · ", retry);
+    }
+    for (const issue of syncIssues) {
+      const r = active().find((x) => x.id === issue.id);
+      const detail = document.createElement("span");
+      const reason = /excede/.test(issue.message) ? "El pago supera las cuotas pendientes; revisa si está duplicado o mal asignado." : /Cronograma|cronograma|Compra|programad/.test(issue.message) ? "Revisa el cronograma y sus movimientos vinculados." : /42501|PGRST30/.test(issue.code) ? "Revisa tu sesión y la vigencia en Mi acceso." : /23514|P0001|220/.test(issue.code) ? "El servidor rechazó los datos; revisa importes, fechas y vínculos." : "No se pudo enviar este registro. Revisa la conexión y reintenta.";
+      detail.textContent = ` · ${r?.data.name || r?.data.date || "Registro"}: ${reason} (${issue.code}) `;
+      el.append(detail);
+      if (r) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Revisar registro";
+        button.onclick = () => open(r.kind, r.id);
+        el.append(button);
+      }
+    }
     el.classList.toggle(
       "pending",
       status.includes("pendiente") ||
@@ -305,6 +348,18 @@
     let advice = a.warnings
       .map((t) => `<div class="finance-advice-item warning">${esc(t)}</div>`)
       .join("");
+    const paymentGroups = new Map();
+    for (const r of rs.filter((r) => !r.deleted && r.kind === "payment")) {
+      const d = r.data;
+      const key = JSON.stringify([d.debt_id, d.date, num(d.amount), d.principal ?? null, d.schedule_id || "", M.currency(d), d.note || ""]);
+      const group = paymentGroups.get(key) || [];
+      group.push(r); paymentGroups.set(key, group);
+    }
+    for (const group of paymentGroups.values()) if (group.length > 1) {
+      const d = group[0].data;
+      const account = a.debts.find((x) => x.id === d.debt_id) || a.receivables.find((x) => x.id === d.debt_id);
+      advice += `<div class="finance-advice-item warning"><strong>Posibles pagos duplicados: ${group.length} registros · ${esc(account?.data.name || "Cuenta")} · ${esc(d.date)} · ${fmt(d.amount)} cada uno</strong><p>Compara tus comprobantes. Dos pagos del mismo importe pueden ser válidos; elimina solo el registro repetido.</p>${group.map((r, i) => `<button type="button" data-fin-edit="${esc(r.id)}">Revisar pago ${i + 1}</button> <button type="button" data-fin-delete="${esc(r.id)}">Eliminar pago ${i + 1}</button>`).join(" ")}</div>`;
+    }
     const reviewPayments = new Map([...a.paymentsMissingSchedule, ...a.paymentsMissingCapital].map((r) => [r.id, r]));
     for (const r of reviewPayments.values()) {
       const debt = a.debts.find((d) => d.id === r.data.debt_id);
@@ -807,6 +862,12 @@
   }
   q("#finance-form").onsubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
+    submitting = true;
+    try { await submitFinance(e); }
+    finally { submitting = false; }
+  };
+  async function submitFinance(e) {
     let data = Object.fromEntries(new FormData(e.target));
     const numeric = [
       "amount",
@@ -931,6 +992,13 @@
     if (data.name) data.name = data.name.trim();
     if (["income", "debt", "receivable"].includes(formKind) && !data.name)
       return (err.textContent = "Escribe un nombre o alias.");
+    if (formKind === "payment" && !edit && active().some((r) => r.kind === "payment" &&
+      r.data.debt_id === data.debt_id && r.data.date === data.date &&
+      M.currency(r.data) === data.currency && num(r.data.amount) === num(data.amount) &&
+      (r.data.principal ?? null) === (data.principal ?? null) &&
+      (r.data.schedule_id || "") === (data.schedule_id || ""))) {
+      if (!confirm("Ya existe un pago con la misma cuenta, fecha, importe y asignación. ¿Confirmas que es otra operación real y deseas registrarla? Si es el mismo comprobante, cancela y edita el pago existente.")) return;
+    }
     q("#finance-save").disabled = true;
     try {
       const id =
@@ -949,7 +1017,7 @@
     } finally {
       q("#finance-save").disabled = false;
     }
-  };
+  }
   q("#finance-close").onclick = q("#finance-cancel").onclick = () =>
     q("#finance-editor").close();
   q("#finance-settings").onclick = () => {
@@ -979,15 +1047,7 @@
       if (!allowed()) return;
       const r = active().find((r) => r.id === b.dataset.finDelete);
       if (!r) return;
-      if (
-        r.data.schedule_only &&
-        active().some(
-          (x) => x.kind === "payment" && x.data.schedule_id === r.id,
-        )
-      )
-        return notify(
-          "Desvincula los pagos de este cronograma antes de eliminarlo.",
-        );
+      const linkedPayments = r.data.schedule_only ? active().filter((x) => x.kind === "payment" && x.data.schedule_id === r.id) : [];
       if (
         ["debt", "receivable"].includes(r.kind) &&
         (active().some((x) => x.data.debt_id === r.id) ||
@@ -998,15 +1058,24 @@
         );
       if (
         !confirm(
-          "¿Eliminar este registro financiero? Se sincronizará la eliminación en tus dispositivos.",
+          linkedPayments.length ? `¿Eliminar solo el cronograma y desvincular sus ${linkedPayments.length} pago(s)? Los pagos y el capital abonado se conservan. Revisa después sus asignaciones. Se sincronizará en tus dispositivos.` : "¿Eliminar este registro financiero? Se sincronizará la eliminación en tus dispositivos.",
         )
       )
         return;
-      await put({
-        ...r,
-        deleted: true,
-        dirty: true,
-        updated_at: new Date().toISOString(),
+      // Unlink payments and tombstone the schedule in one local transaction.
+      const stamp = nextStamp();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("records", "readwrite"), store = tx.objectStore("records");
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+        tx.onerror = () => {};
+        for (const payment of linkedPayments) {
+          const data = {...payment.data};
+          delete data.schedule_id;
+          delete data.payment_allocation;
+          store.put({...payment, data, dirty:true, updated_at:stamp});
+        }
+        store.put({...r, deleted:true, dirty:true, updated_at:stamp});
       });
       records = await load();
       render();
