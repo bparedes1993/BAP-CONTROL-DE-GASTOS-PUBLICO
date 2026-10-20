@@ -1,8 +1,9 @@
 "use strict";
 const demoMode = new URLSearchParams(location.search).get("demo") === "1";
 const $ = (s) => document.querySelector(s);
+const ledgerCurrency = () => $("#currency-view").value === "USD" ? "USD" : "PEN";
 const money = (n) =>
-  new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(
+  new Intl.NumberFormat("es-PE", { style: "currency", currency: ledgerCurrency() }).format(
     Number(n) || 0,
   );
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -79,7 +80,7 @@ function current() {
       (e) =>
         !e.deleted &&
         (!cloudReady || e.owner_id === cloudUser?.id) &&
-        e.date.slice(0, 7) === $("#month").value,
+        e.date.slice(0, 7) === $("#month").value && (e.currency ?? "PEN") === ledgerCurrency(),
     )
     .sort(
       (a, b) =>
@@ -145,6 +146,9 @@ function show(item = null) {
   editingId = item?.id || null;
   photoData = item?.photo || "";
   $("#expense-form").reset();
+  $("#expense-currency").value = item?.currency ?? ledgerCurrency();
+  $("#expense-currency").disabled = !!item;
+  window.BAP_FINANCE?.chooseCredit();
   $("#expense-credit").value = item?.credit_id || "";
   $("#editor-title").textContent = item ? "Editar gasto" : "Agrega un gasto";
   $("#editor-eyebrow").textContent = item
@@ -254,7 +258,7 @@ function download(blob, name) {
 function excel() {
   let rows = current();
   if (!rows.length) return notice("No hay movimientos en este período.");
-  download(BAP_XLSX.create(rows), `BAP_Gastos_${$("#month").value}.xlsx`);
+  download(BAP_XLSX.create(rows), `BAP_Gastos_${$("#month").value}_${ledgerCurrency()}.xlsx`);
 }
 function pdf() {
   let rows = current();
@@ -263,7 +267,7 @@ function pdf() {
   if (!w) return notice("Permite ventanas emergentes para exportar el PDF.");
   let total = rows.reduce((n, e) => n + Number(e.amount), 0);
   w.document.write(
-    `<!doctype html><html><head><meta charset="utf-8"><title>BAP Gastos ${safe($("#month").value)}</title><style>body{font:13px Arial;color:#172842;margin:38px}h1{font-size:26px}p{color:#64748b}.total{background:#172842;color:white;padding:20px;border-radius:8px;font-size:22px}table{width:100%;border-collapse:collapse;margin-top:23px}td,th{padding:10px;border-bottom:1px solid #dce5ee;text-align:left}th{background:#eff3f7}td:last-child,th:last-child{text-align:right}footer{margin-top:25px;color:#94a3b8}@page{size:A4;margin:18mm}</style></head><body><h1>BAP Gastos</h1><p>Reporte mensual · ${safe($("#month").value)} · ${rows.length} movimientos</p><div class="total">Total del mes: ${money(total)}</div><table><thead><tr><th>Fecha</th><th>Comercio</th><th>Categoría</th><th>Método</th><th>Monto</th></tr></thead><tbody>${rows.map((e) => `<tr><td>${safe(e.date)}</td><td>${safe(e.merchant)}</td><td>${safe(e.category)}</td><td>${safe(e.payment)}</td><td>${money(e.amount)}</td></tr>`).join("")}</tbody></table><footer>Generado desde BAP Gastos · Información registrada por el usuario</footer><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"><\/script></body></html>`,
+    `<!doctype html><html><head><meta charset="utf-8"><title>BAP Gastos ${safe($("#month").value)}</title><style>body{font:13px Arial;color:#172842;margin:38px}h1{font-size:26px}p{color:#64748b}.total{background:#172842;color:white;padding:20px;border-radius:8px;font-size:22px}table{width:100%;border-collapse:collapse;margin-top:23px}td,th{padding:10px;border-bottom:1px solid #dce5ee;text-align:left}th{background:#eff3f7}td:last-child,th:last-child{text-align:right}footer{margin-top:25px;color:#94a3b8}@page{size:A4;margin:18mm}</style></head><body><h1>BAP Gastos</h1><p>Reporte mensual · ${safe($("#month").value)} · ${ledgerCurrency()} · ${rows.length} movimientos</p><div class="total">Total del mes: ${money(total)}</div><table><thead><tr><th>Fecha</th><th>Comercio</th><th>Categoría</th><th>Método</th><th>Monto</th></tr></thead><tbody>${rows.map((e) => `<tr><td>${safe(e.date)}</td><td>${safe(e.merchant)}</td><td>${safe(e.category)}</td><td>${safe(e.payment)}</td><td>${money(e.amount)}</td></tr>`).join("")}</tbody></table><footer>Generado desde BAP Gastos · Información registrada por el usuario</footer><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"><\/script></body></html>`,
   );
   w.document.close();
 }
@@ -283,6 +287,8 @@ async function init() {
   }
 }
 $("#month").addEventListener("change", render);
+$("#currency-view").addEventListener("change", render);
+$("#expense-currency").addEventListener("change", () => window.BAP_FINANCE?.chooseCredit());
 $("#add").onclick = () => show();
 $("#add-inline").onclick = () => show();
 $("#cancel").onclick = close;
@@ -360,6 +366,7 @@ $("#expense-form").addEventListener("submit", async (e) => {
     created: original?.created || new Date().toISOString(),
     date,
     amount,
+    currency: $("#expense-currency").value,
     merchant: $("#merchant").value.trim(),
     category: $("#category").value,
     payment: $("#payment").value,
@@ -371,12 +378,17 @@ $("#expense-form").addEventListener("submit", async (e) => {
     dirty: true,
     deleted: false,
   };
+  if (!["PEN", "USD"].includes(item.currency)) return notice("Selecciona soles o dólares.");
+  const linkedCard = window.BAP_FINANCE?.cards().find(c => c.id === item.credit_id);
+  if (item.credit_id && (!linkedCard || (linkedCard.data.currency ?? "PEN") !== item.currency)) return notice("El gasto y la tarjeta deben tener la misma moneda.");
+  if (original && (original.currency ?? "PEN") !== item.currency) return notice("La moneda de un registro guardado se conserva.");
   if (!item.merchant) return notice("Escribe el comercio o la descripción.");
   try {
     await put(item);
     expenses = expenses.filter((x) => x.id !== item.id);
     expenses.push(item);
     $("#month").value = date.slice(0, 7);
+    $("#currency-view").value = item.currency;
     render();
     close();
     notice(
@@ -479,6 +491,7 @@ $("#restore").onchange = async (e) => {
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           item.id,
         ) ||
+        !["PEN", "USD"].includes(item.currency ?? "PEN") ||
         typeof item.date !== "string" ||
         !/^\d{4}-\d{2}-\d{2}$/.test(item.date) ||
         !Number.isFinite(Number(item.amount)) ||
@@ -496,6 +509,12 @@ $("#restore").onchange = async (e) => {
         Number(item.amount) > 999999999
       )
         throw Error("Registro inválido");
+    }
+    for (const item of data.expenses) {
+      const previous = expenses.find(x => x.id === item.id);
+      if (previous && (previous.currency ?? "PEN") !== (item.currency ?? "PEN")) throw Error("Moneda distinta para un ID existente");
+      const card = window.BAP_FINANCE?.cards().find(x => x.id === item.credit_id);
+      if (!item.deleted && item.credit_id && (!card || (card.data.currency ?? "PEN") !== (item.currency ?? "PEN"))) throw Error("Tarjeta o moneda incompatible");
     }
     for (let item of data.expenses) {
       let entry = {
@@ -527,6 +546,7 @@ window.BAP_APP = {
     configured: cloudReady,
     demo: demoMode,
     cloud,
+    currency: ledgerCurrency(),
     expenses: expenses.filter(
       (e) => !cloudReady || e.owner_id === cloudUser?.id,
     ),
@@ -681,6 +701,7 @@ function remoteRow(e) {
     user_id: cloudUser.id,
     date: e.date,
     amount: Number(e.amount),
+    currency: e.currency ?? "PEN",
     merchant: e.merchant,
     category: e.category,
     payment: e.payment,
@@ -698,6 +719,7 @@ function localRow(e) {
     owner_id: e.user_id,
     date: e.date,
     amount: Number(e.amount),
+    currency: e.currency ?? "PEN",
     merchant: e.merchant,
     category: e.category,
     payment: e.payment,

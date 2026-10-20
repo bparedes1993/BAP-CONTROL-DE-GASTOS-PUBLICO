@@ -7,3 +7,6 @@
 
 .account-actions{display:flex;flex-direction:column;gap:9px;margin-top:12px}.danger{padding:11px 14px;background:#fff;border:1px solid #d9aaa8;color:#a53e3c;border-radius:10px;font-weight:700}.danger:hover{background:#fff2f2}
 .google-sign-in{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:40px;padding:10px 12px;border:1px solid #747775;border-radius:20px;background:#fff;color:#1f1f1f;font:500 14px Arial,sans-serif;box-shadow:none}.google-sign-in svg{width:20px;height:20px;flex-shrink:0}.google-sign-in:hover:enabled{background:#f3f6fc}.email-access{margin:18px 0;border-top:1px solid #e5ecef;padding-top:16px}.email-access summary{cursor:pointer;color:#305b71;font-size:13px;font-weight:700;margin-bottom:16px}
+.topactions {flex-wrap:wrap}
+.currency-picker {display:flex;align-items:center;gap:8px;font-size:12px;color:#607285}
+.currency-picker select {font:inherit;font-weight:600;color:#21394c;border:1px solid #dbe4eb;border-radius:10px;padding:12px 10px;background:#fff;min-height:44px;max-width:100%}

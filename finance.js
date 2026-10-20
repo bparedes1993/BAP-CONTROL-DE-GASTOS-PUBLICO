@@ -13,10 +13,12 @@
             "'": "&#39;",
           })[c],
       ),
-    fmt = (v) =>
+    selectedCurrency = () => q("#currency-view").value === "USD" ? "USD" : "PEN",
+    symbol = (c = selectedCurrency()) => c === "USD" ? "US$" : "S/",
+    fmt = (v, c = selectedCurrency()) =>
       new Intl.NumberFormat("es-PE", {
         style: "currency",
-        currency: "PEN",
+        currency: c,
       }).format(Number(v) || 0),
     num = (v) => Number(v) || 0;
   const day = () => {
@@ -41,6 +43,15 @@
       cloud: null,
     };
   const owner = () => state().user?.id || null;
+  async function budgetId(currency) {
+    if (currency === "PEN") return owner() || "00000000-0000-4000-8000-000000000001";
+    // A stable per-user UUID prevents two new devices creating duplicate USD budgets.
+    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("BAP finance budget|" + (owner() || "local") + "|USD"))).slice(0,16);
+    bytes[6] = (bytes[6] & 15) | 128;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
   const visible = () =>
     records.filter(
       (r) => r.owner_id === owner() && (!state().configured || !!owner()),
@@ -83,9 +94,17 @@
       dirty: true,
     };
     if (!M.validRecord(r)) throw Error("Registro inválido");
+    const previous = active().find(x => x.id === r.id);
+    if (previous && M.currency(previous.data) !== M.currency(data)) throw Error("La moneda guardada no se puede cambiar.");
+    const linked = active().find(x => x.id === data.debt_id);
+    if (data.debt_id && (!linked || M.currency(linked.data) !== M.currency(data))) throw Error("La cuenta y el movimiento deben tener la misma moneda.");
     await put(r);
     records = await load();
-    if (owner() === account) render();
+    if (owner() === account) {
+      q("#currency-view").value = M.currency(data);
+      q("#currency-view").dispatchEvent(new Event("change"));
+      render();
+    }
     sync();
     return r;
   }
@@ -96,10 +115,10 @@
     el.innerHTML =
       '<option value="">Efectivo / débito / transferencia</option>' +
       active()
-        .filter((r) => r.kind === "debt" && r.data.type === "card")
+        .filter((r) => r.kind === "debt" && r.data.type === "card" && M.currency(r.data) === (q("#expense-currency").value || selectedCurrency()))
         .map(
           (d) =>
-            `<option value="${esc(d.id)}">Crédito · ${esc(d.data.name)}</option>`,
+            `<option value="${esc(d.id)}">Crédito · ${esc(d.data.name)} · ${M.currency(d.data)}</option>`,
         )
         .join("");
     if ([...el.options].some((o) => o.value === selected)) el.value = selected;
@@ -147,9 +166,10 @@
     status = "Sincronizando finanzas…";
     paintStatus();
     try {
+      const rank = r => ["debt", "receivable"].includes(r.kind) ? 0 : r.data.schedule_only ? 2 : ["payment", "disbursement", "charge"].includes(r.kind) ? 3 : 1;
       for (const r of records.filter(
         (r) => r.owner_id === id && r.dirty && window.BAP_ACCESS?.canWrite(),
-      )) {
+      ).sort((a,b) => rank(a) - rank(b))) {
         if (owner() !== id || !window.BAP_ACCESS?.canWrite()) return;
         let { data: remote, error } = await s.cloud
           .from("finance_entries")
@@ -239,9 +259,9 @@
     paintStatus();
     chooseCredit();
     const period = q("#month").value || day().slice(0, 7),
-      rs = visible(),
+      rs = visible().filter(r => M.currency(r.data) === selectedCurrency()),
       s = state(),
-      a = M.analyze(rs, s.expenses, period, day());
+      a = M.analyze(rs, s.expenses, period, day(), selectedCurrency());
     q("#finance-summary").innerHTML =
       metric(
         "Ingresos cobrados",
@@ -367,7 +387,7 @@
   function debtCard(d, isLoan) {
     const x = d.data,
       b = d.balance;
-    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">Saldo actual según tu registro · S/</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc(x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible según saldo" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
+    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">Saldo actual según tu registro · ${M.currency(x)}</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc(x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible según saldo" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
   }
   function events(rows) {
     return (
@@ -763,8 +783,15 @@
         d.note,
         'maxlength="200"',
       );
+    const account = active().find(r => r.id === context);
+    const cur = M.currency(edit?.data || account?.data || {currency: selectedCurrency()});
+    if (kind !== "settings") fields = select("currency", "Moneda del registro", [["PEN", "Soles · PEN"], ["USD", "Dólares · USD"]], cur) + fields;
+    fields = fields.replaceAll("(S/)", "(moneda elegida)").replaceAll("(S/),", "(moneda elegida),");
+    if (kind === "settings") fields = fields.replaceAll("(moneda elegida)", "(" + symbol() + ")");
+    help += " Soles y dólares se calculan por separado. Los pagos y cuotas deben estar en la moneda de la cuenta. Para una tarjeta bimoneda, registra una cuenta por moneda.";
     q("#finance-title").textContent = title;
     q("#finance-fields").innerHTML = fields;
+    if (q("#f-currency")) q("#f-currency").disabled = !!edit || kind === "schedule";
     q("#finance-form-help").textContent = help;
     q("#finance-error").textContent = "";
     q("#finance-editor").showModal();
@@ -795,6 +822,9 @@
     for (const k of numeric)
       if (k in data) data[k] = data[k] === "" ? null : Number(data[k]);
     if (data.schedule_id === "") delete data.schedule_id;
+    const account = active().find(r => r.id === context);
+    data.currency = formKind === "settings" ? selectedCurrency() : q("#f-currency")?.value || M.currency(edit?.data || account?.data);
+    if (account && M.currency(account.data) !== data.currency) return (q("#finance-error").textContent = "El pago o movimiento debe estar en " + M.currency(account.data) + ", la moneda de esta cuenta. No se convierten importes automáticamente.");
     if (context) data.debt_id = context;
     const err = q("#finance-error");
     err.textContent = "";
@@ -824,6 +854,7 @@
           )
         )
           return (err.textContent = "Esta compra ya tiene un cronograma.");
+        if (M.currency(purchase) !== data.currency) return (err.textContent = "La compra y el cronograma deben tener la misma moneda.");
         data.amount = purchase.amount;
       }
       if (data.paid_before >= data.installments)
@@ -891,7 +922,7 @@
     try {
       const id =
         formKind === "settings"
-          ? edit?.id || owner() || "00000000-0000-4000-8000-000000000001"
+          ? edit?.id || await budgetId(data.currency)
           : edit?.id;
       await save(formKind === "schedule" ? "charge" : formKind, data, id);
       q("#finance-editor").close();
@@ -909,7 +940,7 @@
   q("#finance-close").onclick = q("#finance-cancel").onclick = () =>
     q("#finance-editor").close();
   q("#finance-settings").onclick = () => {
-    const r = active().find((r) => r.kind === "settings");
+    const r = active().find((r) => r.kind === "settings" && M.currency(r.data) === selectedCurrency());
     open("settings", r?.id);
   };
   q("#finanzas").onclick = async (e) => {
@@ -1034,9 +1065,22 @@
         )
           throw Error("Cuenta vinculada ausente");
       const merged = [
-        ...active().filter((r) => !backup.records.some((x) => x.id === r.id)),
+        ...active().filter((r) => !backup.records.some((x) => x.id === r.id || (r.kind === "settings" && x.kind === "settings" && M.currency(r.data) === M.currency(x.data)))),
         ...backup.records.filter((r) => !r.deleted),
       ];
+      const budgets = new Set();
+      for (const r of merged) {
+        const previous = active().find(x => x.id === r.id);
+        if (previous && M.currency(previous.data) !== M.currency(r.data)) throw Error("Moneda distinta para un ID existente");
+        if (r.kind === "settings") {
+          if (budgets.has(M.currency(r.data))) throw Error("Presupuesto duplicado por moneda");
+          budgets.add(M.currency(r.data));
+        }
+        if (r.data.debt_id) {
+          const account = merged.find(x => x.id === r.data.debt_id);
+          if (!account || M.currency(account.data) !== M.currency(r.data)) throw Error("Moneda de la cuenta incompatible");
+        }
+      }
       const linkedExpenses = new Set();
       for (const r of merged) {
         if (r.data.schedule_only) {
@@ -1067,15 +1111,11 @@
         )
       )
         return;
+      const restoredRows = await Promise.all(backup.records.map(async r => ({...r, id:r.kind === "settings" ? active().find(x => x.kind === "settings" && M.currency(x.data) === M.currency(r.data))?.id || await budgetId(M.currency(r.data)) : r.id})));
       await transact("readwrite", (store) => {
-        for (const r of backup.records) {
-          const id =
-            r.kind === "settings"
-              ? owner() || "00000000-0000-4000-8000-000000000001"
-              : r.id;
+        for (const r of restoredRows) {
           store.put({
             ...r,
-            id,
             owner_id: owner(),
             updated_at: new Date().toISOString(),
             deleted: !!r.deleted,
@@ -1123,6 +1163,7 @@
         active().find((p) => p.id === r.data.schedule_id)?.data.name || "",
         "",
         "",
+        M.currency(r.data),
       ]);
     const installmentRows = active()
       .filter((r) => r.kind === "debt")
@@ -1146,6 +1187,7 @@
             d.data.name,
             i.paid,
             i.remaining,
+            M.currency(d.data),
           ]),
         ),
       );
@@ -1162,42 +1204,44 @@
           "Fecha",
           "Tipo",
           "Descripción / cuenta",
-          "Monto o saldo base S/",
-          "Capital S/",
-          "Cuota S/",
+          "Monto o saldo base",
+          "Capital",
+          "Cuota",
           "TEA %",
           "Vencimiento",
           "Nota",
           "Total cuotas",
           "Cuotas históricas",
           "Primera cuota",
-          "Cuota bancaria S/",
-          "Presupuesto mensual S/",
+          "Cuota bancaria",
+          "Presupuesto mensual",
           "Cronograma del pago",
-          "Pagado cuota S/",
-          "Pendiente cuota S/",
+          "Pagado cuota",
+          "Pendiente cuota",
+          "Moneda",
         ],
         rows,
-        [3, 4, 5, 6],
+        [3, 4, 5, 6, 9, 10, 12, 13, 15, 16],
         "Finanzas",
-        [3, 4, 5],
+        [3, 4, 5, 12, 13, 15, 16],
+        "NUMBER",
       ),
       `BAP_Finanzas_${q("#month").value}.xlsx`,
     );
   };
   q("#finance-pdf").onclick = () => {
     if (!allowed(false)) return;
-    const a = M.analyze(visible(), state().expenses, q("#month").value, day()),
+    const a = M.analyze(visible(), state().expenses, q("#month").value, day(), selectedCurrency()),
       w = window.open("", "_blank");
     if (!w) return notify("Permite ventanas emergentes para exportar PDF.");
     w.document.write(
-      `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>BAP · Plan financiero</title><style>body{font:13px/1.6 Arial;color:#172b47;margin:35px}h1{font-size:27px}h2{margin-top:26px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #dce5ec}th{background:#edf3f5}.finance-row{display:flex;justify-content:space-between;padding:9px;border-bottom:1px solid #eee}.allocation-track{display:none}.plan-remainder{padding:15px;background:#edf3f5}p{color:#5c7185}.finance-advice-item{margin:10px 0;padding:10px;background:#f5f7fa}button{display:none}@page{size:A4;margin:18mm}</style></head><body><h1>BAP · Plan financiero</h1><p>Período ${esc(q("#month").value)} · Emitido ${esc(day())} · Saldos actuales según registro</p><h2>Distribución propuesta</h2>${q("#finance-plan").innerHTML}<h2>Guía y supuestos</h2>${q("#finance-advice").innerHTML}<h2>Deudas</h2><table><thead><tr><th>Cuenta</th><th>Saldo</th><th>Cuota registrada</th><th>Vence</th></tr></thead><tbody>${a.debts.map((d) => `<tr><td>${esc(d.data.name)}</td><td>${fmt(d.balance)}</td><td>${d.data.minimum == null ? "Desconocida" : fmt(d.data.minimum)}</td><td>${esc(d.data.due || "Pendiente")}</td></tr>`).join("")}</tbody></table><h2>Cronogramas de cuotas</h2>${a.debts.map((d) => `<h3>${esc(d.data.name)}</h3>${scheduleView(d).replaceAll("<details ", "<details open ")}`).join("")}<p>Orientación automática. La simulación excluye nuevas compras, comisiones y cambios de tasa. No constituye un cronograma bancario.</p><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"></script></body></html>`,
+      `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>BAP · Plan financiero</title><style>body{font:13px/1.6 Arial;color:#172b47;margin:35px}h1{font-size:27px}h2{margin-top:26px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #dce5ec}th{background:#edf3f5}.finance-row{display:flex;justify-content:space-between;padding:9px;border-bottom:1px solid #eee}.allocation-track{display:none}.plan-remainder{padding:15px;background:#edf3f5}p{color:#5c7185}.finance-advice-item{margin:10px 0;padding:10px;background:#f5f7fa}button{display:none}@page{size:A4;margin:18mm}</style></head><body><h1>BAP · Plan financiero</h1><p>Período ${esc(q("#month").value)} · Moneda ${selectedCurrency()} · Emitido ${esc(day())} · Saldos actuales según registro</p><h2>Distribución propuesta</h2>${q("#finance-plan").innerHTML}<h2>Guía y supuestos</h2>${q("#finance-advice").innerHTML}<h2>Deudas</h2><table><thead><tr><th>Cuenta</th><th>Saldo</th><th>Cuota registrada</th><th>Vence</th></tr></thead><tbody>${a.debts.map((d) => `<tr><td>${esc(d.data.name)}</td><td>${fmt(d.balance)}</td><td>${d.data.minimum == null ? "Desconocida" : fmt(d.data.minimum)}</td><td>${esc(d.data.due || "Pendiente")}</td></tr>`).join("")}</tbody></table><h2>Cronogramas de cuotas</h2>${a.debts.map((d) => `<h3>${esc(d.data.name)}</h3>${scheduleView(d).replaceAll("<details ", "<details open ")}`).join("")}<p>Orientación automática. La simulación excluye nuevas compras, comisiones y cambios de tasa. No constituye un cronograma bancario.</p><script src="${location.origin + location.pathname.replace(/[^/]*$/, "")}print-report.js"></script></body></html>`,
     );
     w.document.close();
   };
   window.BAP_FINANCE = {
-    cards: () =>
-      active().filter((r) => r.kind === "debt" && r.data.type === "card"),
+    chooseCredit,
+    cards: () => active().filter(r => r.kind === "debt" && r.data.type === "card"),
     async clearOwner(id) {
       for (const r of records.filter((r) => r.owner_id === id))
         await transact("readwrite", (s) => s.delete(r.id));

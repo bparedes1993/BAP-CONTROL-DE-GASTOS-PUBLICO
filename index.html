@@ -56,7 +56,7 @@
               ☁ Sincronización</button
             ><label class="month-picker"
               >Período <input id="month" type="month" /></label
-            ><button class="primary" id="add">＋ Nuevo gasto</button>
+            ><label class="currency-picker">Moneda<select id="currency-view" aria-label="Moneda de los reportes"><option value="PEN">Soles · PEN</option><option value="USD">Dólares · USD</option></select></label><button class="primary" id="add">＋ Nuevo gasto</button>
           </div>
         </header>
         <section id="mi-acceso" class="commercial-area panel">
@@ -88,10 +88,11 @@
                 id="requested-plan"
                 required
               ></select></label
-            ><button id="request-access" class="primary" type="submit">
+            ><label>Medio de pago<select id="requested-method" required><option value="">Cargando medios…</option></select></label><label>Referencia de operación, si ya pagaste<input id="requested-reference" maxlength="100" autocomplete="off" placeholder="No confirma el pago"></label><button id="request-access" class="primary" type="submit">
               Enviar solicitud de plan
             </button>
           </form>
+          <section id="checkout-instructions" class="checkout-instructions" aria-live="polite" hidden></section>
           <p id="access-request-state" class="commercial-help" role="status"></p>
           <div id="access-payments"></div>
           <p class="commercial-help">
@@ -167,6 +168,7 @@
                 vigencias existentes al editar un plan.
               </p>
               <div id="admin-plans" class="commercial-plans"></div>
+              <h3>Medios de cobro</h3><p class="commercial-help">Configura el titular, número o cuenta y el QR. Solo los medios que actives aparecerán al solicitar un plan. Los planes se cobran en soles; verifica la recepción del pago antes de aprobar.</p><button id="payment-methods-load" class="outline" type="button">Configurar medios de cobro</button><p id="payment-methods-state" class="commercial-help" role="status"></p><div id="payment-methods-admin" class="payment-methods-admin"></div>
               <h3>Control comercial</h3>
               <button id="enforce-commercial" class="primary" type="button">
                 Activar control obligatorio
@@ -256,7 +258,8 @@
             </button>
           </div>
           <div data-fin-panel="plan" role="tabpanel">
-            <div id="finance-summary" class="finance-grid"></div>
+            <p class="finance-help currency-explanation">Los reportes y presupuestos se muestran en la moneda elegida arriba. Soles y dólares se calculan por separado, sin conversión automática.</p>
+          <div id="finance-summary" class="finance-grid"></div>
             <div class="finance-layout">
               <section class="panel plan-panel">
                 <div class="section-head">
@@ -615,7 +618,7 @@
         <div class="formgrid">
           <label>Fecha<input id="date" type="date" required /></label
           ><label
-            >Monto (S/)<input
+            >Moneda del gasto<select id="expense-currency"><option value="PEN">Soles · PEN</option><option value="USD">Dólares · USD</option></select></label><label>Monto en la moneda elegida<input
               id="amount"
               type="number"
               min="0.01"
@@ -678,6 +681,7 @@
     <script src="finance-model.js" defer></script>
     <script src="sync-client.js" defer></script>
     <script src="commercial.js" defer></script>
+    <script src="checkout.js" defer></script>
     <script src="app.js" defer></script>
     <script src="finance.js" defer></script>
   </body>

@@ -2,6 +2,10 @@
 
 Aplicación web adaptable e instalable para registrar gastos desde celular y computadora.
 
+## Monedas y medios de cobro (20/10/2026)
+
+Gastos, ingresos, préstamos, tarjetas, cuotas y pagos admiten soles y dólares, con presupuestos y totales separados por moneda. La solicitud de plan permite elegir Yape, Plin o transferencia y consultar el titular, número/cuenta y QR configurados por el administrador con MFA. Los medios están inicialmente desactivados hasta que el titular guarde datos reales. La referencia del cliente no aprueba ni certifica un pago. Los planes mantienen su precio en soles. Ver [MONEDAS_Y_COBROS.md](MONEDAS_Y_COBROS.md), incluidas las migraciones `currencies-installments.sql` y `payment-methods.sql`, que deben aplicarse al final.
+
 ## Control comercial (09/10/2026)
 
 Incluye Mi acceso, catálogo de planes, registro de clientes al entrar, vigencias, pago manual registrado por el administrador y auditoría. Las decisiones administrativas exigen segundo factor; el backend valida el permiso para escribir. Consulta [COMERCIAL.md](COMERCIAL.md) y [SECURITY.md](SECURITY.md). La instalación base conserva modo piloto; en este proyecto el control obligatorio se activó en Supabase el 07/10/2026 por petición del titular mediante `commercial-enforce.sql`. Las cuentas sin plan aprobado conservan lectura/exportación y no pueden guardar cambios. Google está habilitado en Supabase y esta versión activa el botón de acceso; falta comprobar el ingreso completo con una cuenta real. Ver [GOOGLE.md](GOOGLE.md). El acceso alternativo admite código o enlace por correo; SMTP sigue requiriendo credencial y prueba de entrega. Incluye autorización administrativa reservada y sincronización incremental. Ver [SMTP.md](SMTP.md). No hay cobros automáticos.

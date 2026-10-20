@@ -1,5 +1,7 @@
 # Revisión técnica de seguridad y capacidad
 
+20/10/2026: se añaden validaciones de moneda y enlaces de cronogramas en servidor, presupuestos por usuario/moneda y destinos de cobro protegidos mediante RPC. Solo usuarios verificados consultan medios activos; modificarlos exige rol administrativo con MFA y revisión vigente. QR limitado a PNG procesado, sin SVG ni imágenes remotas. Las nuevas pruebas usan PostgreSQL aislado y DOM/Auth simulados; no se introducen cuentas, QR ni pagos de prueba en producción. La lectura del QR y el abono real requieren la comprobación del titular. Ver [MONEDAS_Y_COBROS.md](MONEDAS_Y_COBROS.md).
+
 Fecha: 07/10/2026. Alcance: código propio de la web, migraciones PostgreSQL, validación y permisos comerciales. Es una revisión técnica con pruebas de regresión; **no es una certificación ni un pentest independiente**. No se garantiza invulnerabilidad o capacidad ilimitada.
 
 ## Estructura

@@ -1,4 +1,4 @@
-const CACHE = "bap-cuotas-v13";
+const CACHE = "bap-monedas-cobros-v14";
 const ASSETS = [
   "./",
   "./index.html",
@@ -13,6 +13,7 @@ const ASSETS = [
   "./icon.svg",
   "./config.js",
   "./commercial.js",
+  "./checkout.js",
   "./commercial.css",
   "./supabase-client.js",
   "./print-report.js",

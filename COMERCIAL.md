@@ -1,5 +1,7 @@
 # Control comercial de BAP Gastos
 
+20/10/2026: se incorporan medios de cobro configurables con MFA (Yape/Plin por número o QR y transferencia por cuenta/CCI). Solo los destinos activados se muestran a cuentas verificadas. La solicitud conserva el método y referencia indicados y queda pendiente de comprobación; no crea un pago confirmado ni activa acceso. Ver [MONEDAS_Y_COBROS.md](MONEDAS_Y_COBROS.md). Los planes se cobran en soles y los medios empiezan sin datos de cobro.
+
 Estado al 09/10/2026: catálogo de planes y registro de cuentas verificadas al entrar incorporados. La instalación inicial conserva modo piloto; `commercial-enforce.sql` activa el control por petición del titular sin aprobar cuentas ni registrar pagos. El control obligatorio fue activado en este proyecto el 07/10/2026 por petición del titular: sin aprobación vigente solo se conserva consulta y exportación. La autorización administrativa reservada necesita inicio de sesión verificado y segundo factor. Google está habilitado en Supabase y en esta versión de la web; su prueba completa con una cuenta real sigue pendiente. Ver [GOOGLE.md](GOOGLE.md). No hay cobros automáticos ni correos comerciales automáticos.
 
 ## Flujo de cliente

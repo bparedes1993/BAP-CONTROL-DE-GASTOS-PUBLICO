@@ -137,6 +137,7 @@
     admin.hidden = !snapshot.is_admin;
     $("#admin-mfa").hidden = !!snapshot.admin_verified;
     $("#admin-controls").hidden = !snapshot.admin_verified;
+    window.BAP_CHECKOUT?.render();
     $("#admin-warning").textContent = snapshot.enforcement
       ? "Control activo: solo las cuentas con acceso vigente pueden modificar datos en la nube."
       : "Modo piloto: las cuentas verificadas todavía pueden modificar sus propios datos. Activa el control cuando hayas aprobado a los usuarios actuales.";
@@ -237,13 +238,15 @@
     const button = $("#request-access");
     button.disabled = true;
     try {
-      await rpc("bap_request_access", { p_plan: $("#requested-plan").value });
+      if (!window.BAP_CHECKOUT) throw Error("Recarga la página para cargar los medios de pago.");
+      await rpc("bap_request_access_with_payment", window.BAP_CHECKOUT.request());
       await refresh();
       notify("Solicitud registrada. BAP revisará el plan y la vigencia.");
     } catch (error) {
       notify(error.message || "No se pudo registrar la solicitud.");
     } finally {
       button.disabled = false;
+      window.BAP_CHECKOUT?.render();
     }
   };
   async function loadAdmin() {
@@ -283,7 +286,7 @@
       ? adminData.customers
           .map(
             (c) =>
-              `<article class="commercial-customer"><div><strong>${escape(c.email)}</strong><span class="access-chip">${escape(labels[c.effective_status] || c.status)}</span><small>${escape(c.plan_id || c.requested_plan || "Sin plan solicitado")} · Hasta ${escape(date(c.ends_at))}</small><small>Última entrada a BAP: ${escape(c.last_seen_at ? new Date(c.last_seen_at).toLocaleString("es-PE", {timeZone: "America/Lima"}) : "Aún sin entrada registrada")}</small></div><button class="outline" data-manage="${escape(c.user_id)}">Gestionar acceso</button><a class="text-btn" href="mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent("BAP · Estado de tu acceso")}&body=${encodeURIComponent("Hola. El estado de tu acceso a BAP es: " + (labels[c.effective_status] || c.status) + ".\nConsulta tu plan y vigencia entrando en la web de BAP.\n" + location.origin + location.pathname)}">Preparar correo</a></article>`,
+              `<article class="commercial-customer"><div><strong>${escape(c.email)}</strong><span class="access-chip">${escape(labels[c.effective_status] || c.status)}</span><small>${escape(c.plan_id || c.requested_plan || "Sin plan solicitado")} · ${escape(methods[c.requested_method] || "Medio no indicado")} · Hasta ${escape(date(c.ends_at))}</small><small>Última entrada a BAP: ${escape(c.last_seen_at ? new Date(c.last_seen_at).toLocaleString("es-PE", {timeZone: "America/Lima"}) : "Aún sin entrada registrada")}</small></div><button class="outline" data-manage="${escape(c.user_id)}">Gestionar acceso</button><a class="text-btn" href="mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent("BAP · Estado de tu acceso")}&body=${encodeURIComponent("Hola. El estado de tu acceso a BAP es: " + (labels[c.effective_status] || c.status) + ".\nConsulta tu plan y vigencia entrando en la web de BAP.\n" + location.origin + location.pathname)}">Preparar correo</a></article>`,
           )
           .join("")
       : '<p class="finance-help">No se encontraron clientes.</p>';
@@ -307,6 +310,7 @@
       ? "Control de planes activo"
       : "Activar control obligatorio";
     $("#enforce-commercial").disabled = !!adminData.enforcement;
+    await window.BAP_CHECKOUT?.loadAdmin();
   }
   $("#admin-load").onclick = async () => {
     try {
@@ -355,6 +359,8 @@
     $("#decision-days").value =
       adminData.plans.find((p) => p.id === $("#decision-plan").value)?.days ||
       30;
+    $("#decision-method").value = selected.requested_method || "transfer";
+    $("#decision-reference").value = selected.requested_reference || "";
     $("#decision-error").textContent = "";
     $("#decision-dialog").showModal();
   };

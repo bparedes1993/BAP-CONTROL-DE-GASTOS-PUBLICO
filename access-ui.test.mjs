@@ -12,6 +12,7 @@ const scripts = await Promise.all(
     "finance-model.js",
     "sync-client.js",
     "commercial.js",
+    "checkout.js",
     "app.js",
     "finance.js",
   ].map(async (name) => [
@@ -52,6 +53,12 @@ async function create(url, anonymous = false, options = {}) {
   let downloads = 0,
     remoteWrites = 0,
     rpcCount = 0;
+  let checkoutMethods = options.methods ?? [
+    {method:"yape",enabled:true,payee:"Titular ficticio",phone:"900000001",revision:1},
+    {method:"plin",enabled:true,payee:"Titular ficticio <svg onload=alert(1)>",phone:"900000002",revision:2},
+    {method:"transfer",enabled:true,payee:"Titular ficticio",bank:"Banco ficticio",account:"00000000000000",revision:3},
+  ];
+  const checkoutSaves = [];
   w.URL.createObjectURL = () => {
     downloads++;
     return "blob:synthetic-test";
@@ -115,10 +122,21 @@ async function create(url, anonymous = false, options = {}) {
         registrations++;
         return { data: null, error: null };
       }
-      if (name === "bap_request_access") {
+      if (name === "bap_checkout") return {data:checkoutMethods.filter(m=>m.enabled),error:null};
+      if (name === "bap_admin_checkout_methods") return {data:checkoutMethods,error:null};
+      if (name === "bap_admin_save_checkout") {
+        checkoutSaves.push(args);
+        const updated = {method:args.p_method,...args.p_data,revision:args.p_revision+1};
+        checkoutMethods = checkoutMethods.map(m=>m.method === args.p_method ? updated : m);
+        return {data:updated,error:null};
+      }
+      if (name === "bap_request_access_with_payment") {
         entitlement = {
           ...entitlement,
           requested_plan: args.p_plan,
+          requested_method: args.p_method,
+          requested_reference: args.p_reference,
+          requested_method_revision: args.p_revision,
           status: "pending",
           can_write: false,
         };
@@ -178,6 +196,8 @@ async function create(url, anonymous = false, options = {}) {
   await wait(() => w.BAP_APP?.state().configured || w.BAP_APP?.state().demo);
   if (!w.BAP_APP.state().demo && !anonymous)
     await wait(() => w.BAP_APP.state().user && w.BAP_ACCESS.snapshot());
+  if (!w.BAP_APP.state().demo && !anonymous && options.methods?.length !== 0)
+    await wait(() => w.document.querySelector("#requested-method").value);
   await wait(
     () =>
       !/Cargando|Abriendo|Sincronizando/.test(
@@ -198,6 +218,7 @@ async function create(url, anonymous = false, options = {}) {
     registrations: () => registrations,
     oauth: () => oauth,
     clientOptions: () => clientOptions,
+    checkoutSaves: () => checkoutSaves,
   };
 }
 const f = await create("https://app.example.invalid/");
@@ -209,12 +230,21 @@ assert.equal(f.registrations(), 1);
 checks++;
 assert.equal($("#access-catalog").hidden, false);
 checks++;
+$("#requested-method").value = "plin";
+$("#requested-method").dispatchEvent(new w.Event("change"));
+$("#requested-reference").value = "TEST-REFERENCE-ONLY";
+assert.match($("#checkout-instructions").textContent,/900000002/);
+assert.equal($("#checkout-instructions svg"),null);
+checks += 2;
 $("#access-request").dispatchEvent(
   new w.Event("submit", { bubbles: true, cancelable: true }),
 );
 await wait(() => !$("#request-access").disabled);
 assert.equal(w.BAP_ACCESS.canWrite(), false);
 assert.match($("#access-request-state").textContent, /Solicitud pendiente/);
+checks += 2;
+assert.equal(w.BAP_ACCESS.snapshot().requested_method,"plin");
+assert.equal(w.BAP_ACCESS.snapshot().requested_reference,"TEST-REFERENCE-ONLY");
 checks += 2;
 await w.BAP_ACCESS.refresh();
 assert.equal(f.registrations(), 1);
@@ -347,6 +377,54 @@ await w.BAP_ACCESS.refresh();
 w.dispatchEvent(new w.Event("bap:render"));
 await wait(() => $("#finance-debts").textContent.includes("Parcial"));
 checks++;
+// A separate USD ledger, including payments, schedules and its own budget.
+w.document.querySelector('[data-fin-add="debt"]').click();
+await submitFinance({name:"Préstamo USD",type:"loan",currency:"USD",balance:600,date:"2026-10-01",tea:0,minimum:0});
+await wait(()=>$("#finance-debts").textContent.includes("Préstamo USD"));
+assert.equal($("#currency-view").value,"USD");
+assert(!$("#finance-debts").textContent.includes("Tarjeta cuotas"));
+assert.equal($("#total").textContent.includes("600"),false);
+checks+=3;
+w.document.querySelector('[data-fin-action="schedule"]').click();
+await submitFinance({name:"Cronograma USD",installments:6,paid_before:0,first_due:"2026-10-20",tea:0});
+w.document.querySelector('[data-fin-action="payment"]').click();
+$("#f-currency").value="PEN";
+$("#f-amount").value="40";
+$("#f-principal").value="40";
+$("#finance-form").dispatchEvent(new w.Event("submit",{bubbles:true,cancelable:true}));
+assert.match($("#finance-error").textContent,/USD/);
+assert.equal($("#finance-editor").open,true);
+checks+=2;
+await submitFinance({currency:"USD",amount:40,principal:40,date:"2026-10-10",schedule_id:$("#f-schedule_id").options[1].value});
+assert.match($("#finance-debts").textContent,/560/);
+assert.match($("#finance-debts").textContent,/Parcial/);
+assert.match($("#finance-debts").textContent,/USD/);
+checks+=3;
+$("#finance-settings").click();
+await submitFinance({income:200,expenses:20,reserve:10});
+$("#currency-view").value="PEN";$("#currency-view").dispatchEvent(new w.Event("change"));
+await wait(()=>$("#finance-debts").textContent.includes("Tarjeta cuotas"));
+assert(!$("#finance-debts").textContent.includes("Préstamo USD"));
+$("#finance-settings").click();
+await submitFinance({income:1000,expenses:50,reserve:0});
+$("#currency-view").value="USD";$("#currency-view").dispatchEvent(new w.Event("change"));
+await wait(()=>$("#finance-debts").textContent.includes("Préstamo USD"));
+$("#finance-settings").click();
+assert.equal($("#f-expenses").value,"20");
+$("#finance-close").click();
+checks+=2;
+// Updating collection settings uses the current revision and doesn't approve a plan.
+f.set({is_admin:true,admin_verified:true});await w.BAP_ACCESS.refresh();
+$("#payment-methods-load").click();
+await wait(()=>$("#payment-methods-admin [data-method=yape]"));
+const yapeForm=$("#payment-methods-admin [data-method=yape]");
+yapeForm.querySelector('[name=phone]').value="900000003";
+yapeForm.dispatchEvent(new w.Event("submit",{bubbles:true,cancelable:true}));
+await wait(()=>f.checkoutSaves().length===1 && $("#payment-methods-state").textContent.includes("guardado"));
+assert.equal(f.checkoutSaves()[0].p_data.phone,"900000003");
+assert.equal(f.checkoutSaves()[0].p_revision,1);
+checks+=2;
+f.set({is_admin:false,admin_verified:false});
 f.set({
   status: "expired",
   can_write: false,
@@ -375,6 +453,15 @@ assert.equal(f.writeCount(), fakeWriteBefore);
 checks++;
 await wait(() => !$("#finance-sync").textContent.includes("Sincronizando"));
 f.dom.window.close();
+const noMethods=await create("https://app.example.invalid/",false,{methods:[]});
+await wait(()=>noMethods.w.document.querySelector("#checkout-instructions").textContent.includes("todavía"));
+assert.equal(noMethods.w.document.querySelector("#request-access").disabled,true);
+const beforeRpc=noMethods.rpcCount();
+noMethods.w.document.querySelector("#access-request").dispatchEvent(new noMethods.w.Event("submit",{bubbles:true,cancelable:true}));
+assert.equal(noMethods.rpcCount(),beforeRpc);
+checks+=2;
+await wait(()=>!noMethods.w.document.querySelector("#finance-sync").textContent.includes("Sincronizando"));
+noMethods.dom.window.close();
 const d = await create("https://app.example.invalid/?demo=1#mi-acceso");
 await wait(() => d.w.BAP_ACCESS.snapshot());
 assert.equal(d.w.BAP_ACCESS.snapshot().is_admin, true);

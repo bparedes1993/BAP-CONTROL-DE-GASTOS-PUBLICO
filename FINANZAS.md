@@ -70,3 +70,7 @@ Con control comercial activo, los cambios requieren una autorización vigente. L
 Se utilizan metadatos de cronograma (`schedule_only: true`) dentro de registros `charge` ya admitidos por `finance_entries`. El modelo excluye esos metadatos del saldo y de cargos reales. No requiere tablas, credenciales ni políticas nuevas; conserva RLS y autorización comercial existentes. Todos los dispositivos deben recargar la versión actual antes de utilizar cronogramas: versiones anteriores no reconocen estos metadatos.
 
 La sincronización sigue usando resolución por fecha de modificación, no contabilidad transaccional. Antes de modificar desde otro dispositivo, esperar “Finanzas sincronizadas”. Las tasas referenciales públicas, conciliación automática del estado de cuenta y cálculo exacto de reglas particulares del banco quedan fuera de esta versión. Los pagos anticipados se reflejan como cuotas adelantadas; una reamortización bancaria requiere un cronograma nuevo conciliado.
+# Monedas (20/10/2026)
+
+Los registros anteriores son PEN. Los nuevos admiten PEN o USD; cada cuenta, cronograma y pago debe mantener la misma moneda. El selector Moneda del encabezado presenta los totales y presupuestos de cada moneda por separado. El PDF usa la moneda seleccionada y Excel identifica la moneda de cada fila. No hay conversión de divisas automática. Ver [MONEDAS_Y_COBROS.md](MONEDAS_Y_COBROS.md).
+

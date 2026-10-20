@@ -3,16 +3,18 @@
   const n = (v) => Number(v) || 0,
     round = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
   const month = (date) => String(date || "").slice(0, 7);
+  // Records without a currency belong to the original PEN ledger.
+  const currency = (data) => data?.currency ?? "PEN";
   function balance(debt, rows, expenses) {
     const base = debt.data;
     let amount = n(base.balance);
     for (const e of expenses.filter(
-      (e) => !e.deleted && e.credit_id === debt.id && e.date >= base.date,
+      (e) => !e.deleted && e.credit_id === debt.id && e.date >= base.date && currency(e) === currency(base),
     ))
       amount += n(e.amount);
     for (const r of rows.filter(
       (r) =>
-        !r.deleted && r.data.debt_id === debt.id && r.data.date >= base.date,
+        !r.deleted && r.data.debt_id === debt.id && r.data.date >= base.date && currency(r.data) === currency(base),
     )) {
       if (
         r.kind === "disbursement" ||
@@ -75,7 +77,7 @@
           !r.deleted &&
           r.kind === "charge" &&
           r.data.schedule_only === true &&
-          r.data.debt_id === debt.id,
+          r.data.debt_id === debt.id && currency(r.data) === currency(debt.data),
       )
       .map((r) => {
         const d = r.data;
@@ -87,7 +89,7 @@
           : null;
         const stale =
           !!d.expense_id &&
-          (!expense || round(expense.amount) !== round(d.amount));
+          (!expense || currency(expense) !== currency(d) || round(expense.amount) !== round(d.amount));
         let items;
         try {
           items = scheduleItems(d);
@@ -107,7 +109,7 @@
             p.kind === "payment" &&
             p.data.schedule_id === r.id &&
             p.data.debt_id === debt.id &&
-            p.data.date <= today,
+            p.data.date <= today && currency(p.data) === currency(d),
         );
         let available = Math.round(
           payments.reduce((sum, p) => sum + n(p.data.amount), 0) * 100,
@@ -164,7 +166,10 @@
         };
       });
   }
-  function analyze(rows, expenses, period, day) {
+  function analyze(rows, expenses, period, day, selectedCurrency = "PEN") {
+    if (!["PEN", "USD"].includes(selectedCurrency)) throw Error("Moneda inválida");
+    rows = rows.filter((r) => currency(r.data) === selectedCurrency);
+    expenses = expenses.filter((e) => currency(e) === selectedCurrency);
     rows = rows.filter(
       (r) =>
         !r.deleted &&
@@ -462,6 +467,7 @@
       );
     const totalRequired = debts.reduce((a, d) => a + d.required, 0);
     return {
+      currency: selectedCurrency,
       settings,
       earned,
       purchases,
@@ -544,6 +550,7 @@
         /^\d{4}-\d{2}-\d{2}$/.test(v || "") &&
         !Number.isNaN(Date.parse(v + "T12:00:00Z")) &&
         new Date(v + "T12:00:00Z").toISOString().slice(0, 10) === v;
+    if (("currency" in d && typeof d.currency !== "string") || !["PEN", "USD"].includes(currency(d))) return false;
     if (r.kind !== "settings" && !goodDate(d.date)) return false;
     if (d.due && !goodDate(d.due)) return false;
     if (
@@ -639,6 +646,7 @@
     return true;
   }
   const api = {
+    currency,
     analyze,
     balance,
     project,
