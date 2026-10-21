@@ -8,7 +8,7 @@
   });
   const key = (id) => "bap-sync:" + id;
   const isMeta = (row) =>
-    typeof row.id === "string" && row.id.startsWith("bap-sync:");
+    typeof row.id === "string" && (row.id.startsWith("bap-sync:") || row.id.startsWith("bap-checkpoint:"));
   const valid = (c) =>
     c &&
     typeof c.version === "string" &&
@@ -95,12 +95,69 @@
       tx.onabort = () => reject(tx.error);
     });
   }
+  const checkpointKey = (id) => "bap-checkpoint:" + (id || "local");
+  function write(db, store, rows) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readwrite"), s = tx.objectStore(store);
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || Error("Guardado cancelado"));
+      tx.onerror = () => {};
+      try { for (const row of rows) s.put(row); }
+      catch (error) { tx.abort(); reject(error); }
+    });
+  }
+  // Checkpoint and import share a transaction: quota/validation failures leave both unchanged.
+  function replaceWithCheckpoint(db, store, userId, rows) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readwrite"), s = tx.objectStore(store), request = s.getAll();
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || Error("Restauración cancelada"));
+      tx.onerror = () => {};
+      request.onsuccess = () => {
+        try {
+          const previous = request.result.filter((r) => !isMeta(r) && (r.owner_id ?? null) === (userId ?? null));
+          if (rows.some((r) => request.result.some((old) => old.id === r.id && (old.owner_id ?? null) !== (userId ?? null)))) throw Error("ID de otra cuenta");
+          s.put({id:checkpointKey(userId), exported:new Date().toISOString(), rows:previous});
+          for (const row of rows) s.put(row);
+        } catch (error) { tx.abort(); reject(error); }
+      };
+    });
+  }
+  function checkpoint(db, store, userId) {
+    return new Promise((resolve,reject) => {
+      const request=db.transaction(store).objectStore(store).get(checkpointKey(userId));
+      request.onsuccess=()=>resolve(request.result);
+      request.onerror=()=>reject(request.error);
+    });
+  }
+  function acknowledge(db, store, sent) {
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(store,"readwrite"), s=tx.objectStore(store), request=s.get(sent.id);
+      request.onsuccess=()=>{
+        const current=request.result;
+        if (current?.updated_at===sent.updated_at && JSON.stringify({...current,dirty:false})===JSON.stringify({...sent,dirty:false})) s.put({...current,dirty:false});
+      };
+      tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);tx.onerror=()=>{};
+    });
+  }
+  function clearCheckpoint(db, store, userId) {
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(store,"readwrite");tx.objectStore(store).delete(checkpointKey(userId));
+      tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);tx.onerror=()=>{};
+    });
+  }
   window.BAP_SYNC = Object.freeze({
     isMeta,
+    write,
+    acknowledge,
+    replaceWithCheckpoint,
+    checkpoint,
+    clearCheckpoint,
     pull,
     commit,
     cursor,
     clearCursor,
   });
 })();
+
 

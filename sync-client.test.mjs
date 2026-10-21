@@ -145,9 +145,35 @@ checks+=2;
 await S.commit(db,"expenses",A,[{...dirtyEdit,amount:100,dirty:false,updated_at:"2026-10-20T19:00:03.000Z"}],before);
 assert.equal((await all()).find(r=>r.id===R1).amount,100);
 checks++;
+// Import snapshots stay isolated by owner, and a failed transaction cannot partially restore.
+const C1="50000000-0000-4000-8000-000000000001", C2="50000000-0000-4000-8000-000000000002";
+const original={id:C1,owner_id:A,amount:11,dirty:true,updated_at:"2026-10-21T10:00:00.000Z"};
+await S.write(db,"expenses",[original,{id:C2,owner_id:B,amount:22}]);
+await S.replaceWithCheckpoint(db,"expenses",A,[{...original,amount:33}]);
+assert.equal((await all()).find(r=>r.id===C1).amount,33);
+const checkpoint=await S.checkpoint(db,"expenses",A);
+assert.equal(checkpoint.rows.find(r=>r.id===C1).amount,11);
+assert(!checkpoint.rows.some(r=>r.id===C2));
+assert.equal(await S.checkpoint(db,"expenses",B),undefined);
+assert(S.isMeta(checkpoint));checks+=5;
+await assert.rejects(S.replaceWithCheckpoint(db,"expenses",A,[{...original,amount:44},{id:'bad',value:()=>{}}]));
+assert.equal((await all()).find(r=>r.id===C1).amount,33);
+assert.equal((await S.checkpoint(db,"expenses",A)).rows.find(r=>r.id===C1).amount,11);checks+=3;
+await assert.rejects(S.replaceWithCheckpoint(db,"expenses",A,[{id:C2,owner_id:A,amount:99}]));
+assert.equal((await all()).find(r=>r.id===C2).amount,22);checks+=2;
+// An acknowledgment of an older upload never marks a newer edit as synchronized.
+const newer={...original,amount:55,updated_at:"2026-10-21T10:00:01.000Z"};
+await S.write(db,"expenses",[newer]);
+await S.acknowledge(db,"expenses",original);
+assert.equal((await all()).find(r=>r.id===C1).dirty,true);
+await S.acknowledge(db,"expenses",newer);
+assert.equal((await all()).find(r=>r.id===C1).dirty,false);checks+=2;
+await S.clearCheckpoint(db,"expenses",A);
+assert.equal(await S.checkpoint(db,"expenses",A),undefined);checks++;
 db.close();
 dom.window.close();
 console.log(
   `Cursor persistence and retries: ${checks} checks passed (synthetic DOM/IndexedDB).`,
 );
+
 

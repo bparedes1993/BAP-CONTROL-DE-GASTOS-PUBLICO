@@ -1,5 +1,33 @@
 # Revisión técnica de seguridad y capacidad
 
+## Revisión de recuperación y uso diario · 21/10/2026
+
+Alcance: revisión del código publicado y pruebas aisladas de PostgreSQL, DOM e IndexedDB. No se ejecutaron ataques ni restauraciones contra datos reales de clientes. Las pruebas de RLS, autorización comercial y administración con MFA vuelven a ejecutarse; no equivalen a una comprobación de toda la configuración actual del proveedor ni a una certificación.
+
+### Hallazgos corregidos
+
+- El guardado de gastos esperaba el éxito de una petición, no la confirmación de la transacción. Ahora espera la confirmación completa; una escritura abortada no se anuncia como guardada.
+- La restauración de gastos escribía uno por uno. Gastos y finanzas usan ahora una transacción que conserva la copia previa de la cuenta y aplica la importación completa. Un fallo de escritura revierte la operación. Se rechazan IDs repetidos, fechas imposibles y colisiones con registros locales de otra cuenta; se revisan vínculos de tarjeta y cronogramas antes de importar gastos.
+- La confirmación de un envío de gastos podía limpiar la marca pendiente de una edición posterior. Ahora compara la versión guardada dentro de una transacción. Las fechas de modificación son crecientes y los cambios que llegan durante una sincronización provocan otra pasada.
+- El modo local eliminaba definitivamente los gastos. Ahora conserva una marca de eliminación y ofrece una papelera con los últimos 50 gastos de la cuenta. Recuperar valida la tarjeta, conserva el ID y vuelve a incluir el gasto en sus totales. Los cronogramas eliminados deliberadamente no se recrean; deben revisarse al recuperar una compra.
+- El cierre de sesión avisa si quedan cambios por enviar. El panel muestra pendientes de gastos y finanzas y oculta registros y papelera sin sesión antes de iniciar lecturas asíncronas; también limpia los formularios del propietario anterior. La búsqueda filtra listas de gastos e ingresos por el período y moneda seleccionados, sin cambiar totales ni reportes.
+
+### Alcance de las copias
+
+Se conserva **una copia local previa a la última restauración por cuenta y por tipo de datos**. Puede descargarse en el formato JSON de gastos o finanzas para restaurarla mediante el flujo habitual, con confirmación. Las copias internas se excluyen de los registros sincronizados y los reportes, y se limpian junto con los datos locales al eliminar la cuenta. Solo se muestra/exporta la copia del propietario actual.
+
+La copia previa y la papelera dependen del mismo almacenamiento del navegador: **no reemplazan un respaldo externo ni un respaldo de la base del servicio**. Un error de cuota cancela la importación y conserva los datos anteriores. Los JSON descargados y las copias locales no están cifrados con una clave exclusiva del usuario; deben conservarse en dispositivos propios y protegidos. El borrado del almacenamiento puede eliminar copias locales y cambios no enviados.
+
+### Prioridades que requieren validación adicional
+
+1. Verificar y ensayar la recuperación completa de la base del servicio en un entorno separado, con responsables, frecuencia, retención y tiempos de recuperación definidos.
+2. Probar dos cuentas y dos dispositivos reales, desconexión, reconexión y pérdida de sesión; la suite utiliza API/Auth simulados para no tocar datos de clientes.
+3. Revisar las cuentas administrativas, MFA, alertas del proveedor y exposición de credenciales mediante una evaluación operativa independiente. Los controles SQL actuales conservan propiedad por usuario y MFA administrativa.
+4. Evaluar cifrado de copias externas, historial recuperable de registros financieros y traslado de fotos a almacenamiento privado según el volumen. Evitar promesas de invulnerabilidad, recuperación ilimitada o capacidad no medida.
+
+La evidencia automatizada incluye abortar una importación después de iniciar escrituras, aislamiento de la copia previa, limpieza de esa copia, confirmación tardía de envíos, recuperación local, importación desde los formularios, ocultación al cerrar sesión y búsqueda sin alterar totales.
+
+
 20/10/2026: se añaden validaciones de moneda y enlaces de cronogramas en servidor, presupuestos por usuario/moneda y destinos de cobro protegidos mediante RPC. Solo usuarios verificados consultan medios activos; modificarlos exige rol administrativo con MFA y revisión vigente. QR limitado a PNG procesado, sin SVG ni imágenes remotas. Las nuevas pruebas usan PostgreSQL aislado y DOM/Auth simulados; no se introducen cuentas, QR ni pagos de prueba en producción. La lectura del QR y el abono real requieren la comprobación del titular. Ver [MONEDAS_Y_COBROS.md](MONEDAS_Y_COBROS.md).
 
 Fecha: 07/10/2026. Alcance: código propio de la web, migraciones PostgreSQL, validación y permisos comerciales. Es una revisión técnica con pruebas de regresión; **no es una certificación ni un pentest independiente**. No se garantiza invulnerabilidad o capacidad ilimitada.
@@ -57,4 +85,5 @@ Referencias primarias: [RLS](https://supabase.com/docs/guides/database/postgres/
 La autorización de administrador puede reservarse para un correo inexistente: el servidor exige verificar ese correo, consume la autorización una sola vez y mantiene MFA obligatorio para gestionar clientes. No acepta un email/rol enviado por el navegador como prueba de identidad. El acceso por código es opcional hasta configurar las plantillas SMTP; los códigos no se persisten ni se registran. Ver SMTP.md.
 
 OAuth usa PKCE en el SDK oficial con retorno al mismo origen y permisos básicos de identidad. Se eliminan códigos/errores del URL después de inicializar Auth y el service worker no almacena respuestas de callback. Client Secret se introduce exclusivamente en Supabase; Google no concede permisos administrativos ni confirma pagos.
+
 

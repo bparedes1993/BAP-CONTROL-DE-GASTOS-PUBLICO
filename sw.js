@@ -1,4 +1,4 @@
-const CACHE = "bap-compras-tarjeta-v17";
+const CACHE = "bap-recuperacion-v18";
 const ASSETS = [
   "./",
   "./index.html",

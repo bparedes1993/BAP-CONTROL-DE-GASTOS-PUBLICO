@@ -201,6 +201,10 @@
       channel = null;
       connected = id;
       autoReadyOwner = null;
+      edit = context = formKind = null;
+      q("#finance-editor").close();
+      q("#finance-fields").replaceChildren();
+      render(); // Hide the previous owner's view before any asynchronous read.
       records = await load();
       if (id && s.cloud) {
         channel = s.cloud
@@ -341,6 +345,7 @@
         el.append(button);
       }
     }
+    window.BAP_APP?.updateSafety?.();
     el.classList.toggle(
       "pending",
       status.includes("pendiente") ||
@@ -508,11 +513,12 @@
     return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">${isLoan ? "Saldo por cobrar" : "Deuda pendiente"} según tu registro · ${M.currency(x)}</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc((!isLoan && d.schedules?.flatMap((p) => p.items.filter((i) => i.remaining > 0).map((i) => i.due)).sort()[0]) || x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible (se reduce al comprar)" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div><div><dt>Día de pago</dt><dd>${esc(x.payment_day || (x.due ? Number(x.due.slice(8,10)) : "Sin registrar"))}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
   }
   function events(rows) {
+    const accounts=new Map(active().map(r=>[r.id,r]));
     return (
-      rows
+      rows.filter(r=>window.BAP_APP?.matchesSearch?.([r.data.name,r.data.source,r.data.note,r.data.date,r.data.amount,accounts.get(r.data.debt_id)?.data.name]) ?? true)
         .sort((a, b) => (b.data.date || "").localeCompare(a.data.date || ""))
         .map((r) => {
-          let debt = active().find((x) => x.id === r.data.debt_id);
+          let debt = accounts.get(r.data.debt_id);
           let label =
             r.kind === "income"
               ? r.data.name
@@ -1176,6 +1182,12 @@
       "BAP_Finanzas_" + day() + ".json",
     );
   };
+  q("#finance-checkpoint").onclick=async()=>{
+    if (!allowed(false)) return;
+    const copy=await window.BAP_SYNC.checkpoint(db,"records",owner());
+    if (!copy) return notify("No hay una restauración financiera anterior con copia local disponible.");
+    download(new Blob([JSON.stringify({format:"bap-finance-v1",exported:copy.exported,records:copy.rows})],{type:"application/json"}),"BAP_Finanzas_antes_de_restaurar_"+day()+".json");
+  };
   q("#finance-restore").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file || !allowed()) return;
@@ -1184,7 +1196,7 @@
       if (
         backup.format !== "bap-finance-v1" ||
         !Array.isArray(backup.records) ||
-        backup.records.length > 50000
+        backup.records.length > 50000 || new Set(backup.records.map(r=>r.id)).size !== backup.records.length
       )
         throw Error("Formato");
       for (const r of backup.records)
@@ -1247,22 +1259,12 @@
       }
       if (
         !confirm(
-          "¿Restaurar estos registros financieros en la cuenta actual? Los ID coincidentes se reemplazarán.",
+          "¿Restaurar estos registros financieros en la cuenta actual? Los ID coincidentes se reemplazarán. Se guardará una copia local previa para descargarla.",
         )
       )
         return;
       const restoredRows = await Promise.all(backup.records.map(async r => ({...r, id:r.kind === "settings" ? active().find(x => x.kind === "settings" && M.currency(x.data) === M.currency(r.data))?.id || await budgetId(M.currency(r.data)) : r.id})));
-      await transact("readwrite", (store) => {
-        for (const r of restoredRows) {
-          store.put({
-            ...r,
-            owner_id: owner(),
-            updated_at: new Date().toISOString(),
-            deleted: !!r.deleted,
-            dirty: true,
-          });
-        }
-      });
+      await window.BAP_SYNC.replaceWithCheckpoint(db,"records",owner(),restoredRows.map(r=>({...r,owner_id:owner(),updated_at:nextStamp(),deleted:!!r.deleted,dirty:true})));
       records = await load();
       render();
       sync();
@@ -1381,6 +1383,8 @@
   };
   window.BAP_FINANCE = {
     chooseCredit,
+    pendingCount: () => visible().filter(r=>r.dirty).length,
+    syncing: () => busy || syncQueued,
     syncExpense,
     validateExpenseChange,
     sync,
@@ -1389,6 +1393,7 @@
       for (const r of records.filter((r) => r.owner_id === id))
         await transact("readwrite", (s) => s.delete(r.id));
       await window.BAP_SYNC.clearCursor(db, "records", id);
+      await window.BAP_SYNC.clearCheckpoint(db,"records",id);
       records = await load();
       render();
     },

@@ -31,6 +31,13 @@ const wait = async (test) => {
   }
   throw Error("Fixture did not settle");
 };
+async function closeFixture(fixture) {
+  const idle=()=>!fixture.w.BAP_APP.state().syncing && !fixture.w.BAP_FINANCE.syncing();
+  await wait(idle);
+  await new Promise(r=>setTimeout(r,10));
+  await wait(idle);
+  fixture.dom.window.close();
+}
 let checks = 0;
 async function create(url, anonymous = false, options = {}) {
   const dom = new JSDOM(html, {
@@ -477,6 +484,9 @@ w.document.querySelector('[data-fin-action="payment"]').click();
 await submitFinance({amount:10,principal:10,date:"2026-10-12",schedule_id:""});
 await wait(() => $("#finance-sync").textContent.includes('P0001'));
 assert.match($("#finance-sync").textContent,/supera las cuotas/);
+w.confirm=()=>false;await $("#sign-out").onclick();
+assert.equal(w.BAP_APP.state().user.id,user.id);checks++;
+w.confirm=()=>true;
 checks++;
 w.document.querySelector('[data-fin-add="income"]').click();
 await submitFinance({name:"Ingreso de prueba de cola",amount:50,date:"2026-10-12"});
@@ -536,6 +546,38 @@ cardView().querySelector('.installment-schedule [data-fin-delete]').click();
 await wait(()=>cardView().querySelectorAll('.installment-schedule').length===0);
 await w.BAP_FINANCE.syncExpense(cutoffExpense);
 assert.equal(cardView().querySelectorAll('.installment-schedule').length,0);checks++;
+// Recovery and search preserve ownership and the monthly totals.
+const trashButton=$("#expense-trash-list").querySelector(`[data-recover-expense="${afterCutoffExpense.id}"]`);
+assert(trashButton);checks++;
+trashButton.click();
+await wait(()=>w.BAP_APP.state().expenses.some(e=>e.id===afterCutoffExpense.id && !e.deleted));
+assert.match(cardView().textContent,/850[.,]00/);checks++;
+const totalBeforeSearch=$("#total").textContent;
+$("#movement-search").value='INGRESO FICTICIO';$("#movement-search").dispatchEvent(new w.Event('input'));
+assert.equal($("#total").textContent,totalBeforeSearch);
+assert.match($("#finance-incomes").textContent,/Ingreso ficticio/);
+assert(!$("#transactions").textContent.includes('Después del corte'));checks+=3;
+$("#movement-search").value='';$("#movement-search").dispatchEvent(new w.Event('input'));
+// The import UI creates a downloadable checkpoint and rejects a bad file without partial changes.
+const importRow={id:'90000000-0000-4000-8000-000000000001',date:'2026-10-12',amount:7,currency:'PEN',merchant:'Importación de seguridad',category:'Otros',payment:'Efectivo',note:'',photo:'',credit_id:null,created:'2026-10-12T00:00:00Z'};
+async function restoreExpenses(rows){
+ const input=$("#restore");Object.defineProperty(input,'files',{configurable:true,value:[{size:100,text:async()=>JSON.stringify({format:'bap-gastos-v1',expenses:rows})}]});
+ await input.onchange({target:input});
+}
+await restoreExpenses([importRow]);
+assert(w.BAP_APP.state().expenses.some(e=>e.id===importRow.id));checks++;
+const downloadBeforeCheckpoint=f.downloadCount();
+await $("#expense-checkpoint").onclick();assert.equal(f.downloadCount(),downloadBeforeCheckpoint+1);checks++;
+await restoreExpenses([{...importRow,id:'90000000-0000-4000-8000-000000000002'},{...importRow,id:'bad'}]);
+assert(!w.BAP_APP.state().expenses.some(e=>e.id==='90000000-0000-4000-8000-000000000002'));checks++;
+assert($("#data-safety-status").textContent.length>0);checks++;
+const financialImport={id:'90000000-0000-4000-8000-000000000003',kind:'income',data:{name:'Ingreso restituido de prueba',amount:15,currency:'PEN',date:'2026-10-12'}};
+const financeInput=$("#finance-restore");Object.defineProperty(financeInput,'files',{configurable:true,value:[{size:100,text:async()=>JSON.stringify({format:'bap-finance-v1',records:[financialImport]})}]});
+await financeInput.onchange({target:financeInput});
+assert($("#finance-incomes").textContent.includes('Ingreso restituido de prueba'));checks++;
+const financialCopyCount=f.downloadCount();await $("#finance-checkpoint").onclick();
+assert.equal(f.downloadCount(),financialCopyCount+1);checks++;
+
 // Updating collection settings uses the current revision and doesn't approve a plan.
 f.set({is_admin:true,admin_verified:true});await w.BAP_ACCESS.refresh();
 $("#payment-methods-load").click();
@@ -575,7 +617,14 @@ checks++;
 assert.equal(f.writeCount(), fakeWriteBefore);
 checks++;
 await wait(() => !$("#finance-sync").textContent.includes("Sincronizando"));
-f.dom.window.close();
+await wait(()=>!f.w.BAP_APP.state().syncing);
+await wait(()=>!w.BAP_APP.state().syncing && !w.BAP_FINANCE.syncing());
+await $("#sign-out").onclick();
+await wait(()=>!w.BAP_APP.state().user && !$("#finance-summary").textContent.includes('3,500'));
+assert.equal($("#expense-trash-list").textContent,'');
+assert(!$("#transactions").textContent.includes('Compra cuotas'));
+assert(!$("#finance-incomes").textContent.includes('Ingreso restituido de prueba'));checks+=3;
+await closeFixture(f);
 const noMethods=await create("https://app.example.invalid/",false,{methods:[]});
 await wait(()=>noMethods.w.document.querySelector("#checkout-instructions").textContent.includes("todavía"));
 assert.equal(noMethods.w.document.querySelector("#request-access").disabled,true);
@@ -584,7 +633,7 @@ noMethods.w.document.querySelector("#access-request").dispatchEvent(new noMethod
 assert.equal(noMethods.rpcCount(),beforeRpc);
 checks+=2;
 await wait(()=>!noMethods.w.document.querySelector("#finance-sync").textContent.includes("Sincronizando"));
-noMethods.dom.window.close();
+await closeFixture(noMethods);
 const d = await create("https://app.example.invalid/?demo=1#mi-acceso");
 await wait(() => d.w.BAP_ACCESS.snapshot());
 assert.equal(d.w.BAP_ACCESS.snapshot().is_admin, true);
@@ -606,7 +655,20 @@ await wait(() =>
     .querySelector("#finance-incomes")
     .textContent.includes("Sueldo de ejemplo"),
 );
-d.dom.window.close();
+d.w.document.querySelector('#decision-dialog').close();
+d.w.document.querySelector('#add').click();
+d.w.document.querySelector('#merchant').value='Gasto local recuperable';d.w.document.querySelector('#amount').value='12';
+d.w.document.querySelector('#payment').value='Efectivo';
+d.w.document.querySelector('#expense-form').dispatchEvent(new d.w.Event('submit',{bubbles:true,cancelable:true}));
+await wait(()=>!d.w.document.querySelector('#editor').open);
+const localExpense=d.w.BAP_APP.state().expenses.find(e=>e.merchant==='Gasto local recuperable');
+d.w.document.querySelector(`#transactions .delete[data-id="${localExpense.id}"]`).click();
+await wait(()=>d.w.document.querySelector('[data-recover-expense]'));
+assert(d.w.BAP_APP.state().expenses.find(e=>e.id===localExpense.id).deleted);checks++;
+d.w.document.querySelector('[data-recover-expense]').click();
+await wait(()=>!d.w.BAP_APP.state().expenses.find(e=>e.id===localExpense.id).deleted);
+assert.equal(d.writeCount(),0);checks++;
+await closeFixture(d);
 const login = await create("https://app.example.invalid/", true),
   lw = login.w,
   lq = (s) => lw.document.querySelector(s);
@@ -653,7 +715,7 @@ assert.equal(
 );
 checks++;
 await wait(() => !lq("#finance-sync").textContent.includes("Sincronizando"));
-login.dom.window.close();
+await closeFixture(login);
 const google = await create(
   "https://app.example.invalid/?next=https://untrusted.example.invalid",
   true,
@@ -673,7 +735,7 @@ assert.equal(google.oauth()[0].options.scopes, "openid email profile");
 assert.equal(google.w.BAP_APP.state().user, null);
 assert.equal(google.writeCount(), 0);
 checks += 7;
-google.dom.window.close();
+await closeFixture(google);
 const staged = await create("https://app.example.invalid/", true, {
   google: false,
 });
@@ -681,7 +743,7 @@ assert.equal(staged.w.document.querySelector("#sign-in-google").disabled, true);
 staged.w.document.querySelector("#sign-in-google").click();
 assert.equal(staged.oauth().length, 0);
 checks += 2;
-staged.dom.window.close();
+await closeFixture(staged);
 let finishOAuth;
 const failed = await create("https://app.example.invalid/", true, {
   oauthResult: () =>
@@ -705,7 +767,7 @@ assert.equal(
   false,
 );
 checks += 4;
-failed.dom.window.close();
+await closeFixture(failed);
 const callback = await create(
   "https://app.example.invalid/?code=SYNTHETIC-OAUTH-CODE&error_description=PRIVATE-FIXTURE#access_token=FAKE-FIXTURE",
 );
@@ -714,7 +776,7 @@ assert.equal(callback.w.location.hash, "#mi-acceso");
 assert.equal(callback.w.BAP_ACCESS.canWrite(), false);
 assert.equal(callback.registrations(), 1);
 checks += 4;
-callback.dom.window.close();
+await closeFixture(callback);
 console.log(
   `Client integration: ${checks} checks passed (synthetic DOM and mock API).`,
 );

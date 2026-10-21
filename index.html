@@ -214,6 +214,10 @@
             ><small>Con fotografía adjunta</small>
           </article>
         </section>
+        <section class="panel" aria-label="Buscar movimientos">
+          <label>Buscar gastos e ingresos del período<input type="search" id="movement-search" placeholder="Descripción, categoría, fecha o importe" maxlength="100"></label>
+          <p>La búsqueda filtra las listas de gastos e ingresos, sin cambiar los totales ni los reportes.</p>
+        </section>
         <div class="columns">
           <section class="panel" id="movimientos">
             <div class="section-head">
@@ -433,6 +437,13 @@
                 hidden
             /></label>
           </div>
+        </section>
+        <section class="panel" aria-labelledby="safety-title">
+          <h2 id="safety-title">Protege y recupera tus datos</h2>
+          <p id="data-safety-status" role="status"></p>
+          <p>La sincronización y la papelera no sustituyen un respaldo. Descarga las copias de gastos y finanzas en un dispositivo propio; contienen información personal. Borrar los datos del navegador puede eliminar cambios aún no sincronizados y copias locales.</p>
+          <div class="export-actions"><button class="outline" id="expense-checkpoint" type="button">↓ Gastos antes de la última restauración</button><button class="outline" id="finance-checkpoint" type="button">↓ Finanzas antes de la última restauración</button></div>
+          <details id="expense-trash"><summary>Gastos eliminados · recuperar</summary><p>Se muestran hasta 50 gastos eliminados de tu cuenta. Recuperarlos vuelve a incluirlos en tus totales; revisa sus cronogramas si pagaste con crédito.</p><div id="expense-trash-list"></div></details>
         </section>
         <footer id="sync-foot">
           BAP Gastos · <a href="privacy.html">Datos y privacidad</a> · Haz

@@ -24,6 +24,8 @@ let db,
   cloud = null,
   cloudUser = null,
   syncing = false,
+  syncQueued = false,
+  expenseClock = 0,
   cloudReady = false,
   realtimeChannel = null,
   realtimeTimer = null;
@@ -54,25 +56,25 @@ function all() {
     q.onerror = () => reject(q.error);
   });
 }
-function put(item) {
-  return new Promise((resolve, reject) => {
-    const q = db
-      .transaction("expenses", "readwrite")
-      .objectStore("expenses")
-      .put(item);
-    q.onsuccess = resolve;
-    q.onerror = () => reject(q.error);
+function expenseStamp() {
+  expenseClock=expenses.reduce((clock,e)=>Math.max(clock,(Date.parse(e.updated_at)||0)+1),Math.max(Date.now(),expenseClock+1));
+  return new Date(expenseClock).toISOString();
+}
+function put(item) { return window.BAP_SYNC.write(db,"expenses",[item]); }
+function remove(id) {
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction("expenses","readwrite");tx.objectStore("expenses").delete(id);
+    tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);tx.onerror=()=>{};
   });
 }
-function remove(id) {
-  return new Promise((resolve, reject) => {
-    const q = db
-      .transaction("expenses", "readwrite")
-      .objectStore("expenses")
-      .delete(id);
-    q.onsuccess = resolve;
-    q.onerror = () => reject(q.error);
-  });
+function updateSafety() {
+  const el=$("#data-safety-status"); if (!el) return;
+  if (cloudReady && !cloudUser) { el.textContent="Inicia sesión para consultar tus cambios pendientes y recuperar gastos."; $("#expense-trash-list").replaceChildren(); return; }
+  const owned=expenses.filter(e=>!cloudReady || e.owner_id===cloudUser?.id);
+  const pending=owned.filter(e=>e.dirty).length + (window.BAP_FINANCE?.pendingCount() || 0);
+  el.textContent=cloudReady ? pending ? `${pending} cambio(s) pendientes de enviar. Conserva este navegador y su almacenamiento hasta sincronizar.` : "Sin cambios locales pendientes de enviar. Descarga también tus dos respaldos: gastos y finanzas." : "Datos guardados en este navegador. Descarga los respaldos de gastos y finanzas para conservar una copia fuera del dispositivo.";
+  const deleted=owned.filter(e=>e.deleted).sort((a,b)=>b.updated_at.localeCompare(a.updated_at)).slice(0,50);
+  $("#expense-trash-list").innerHTML=deleted.length ? deleted.map(e=>`<div class="transaction"><div class="transaction-main"><strong>${safe(e.merchant)}</strong><small>${safe(e.date)} · ${safe(e.currency || "PEN")} ${Number(e.amount).toFixed(2)}</small></div><button type="button" class="outline" data-recover-expense="${safe(e.id)}">Recuperar gasto</button></div>`).join("") : '<p>No hay gastos eliminados para recuperar.</p>';
 }
 function current() {
   return expenses
@@ -96,6 +98,10 @@ function safe(t) {
       ],
   );
 }
+function matchesSearch(values) {
+  const normalize=v=>String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase();
+  return normalize(values.join(" ")).includes(normalize($("#movement-search").value.trim()));
+}
 function render() {
   let rows = current(),
     total = rows.reduce((a, e) => a + Number(e.amount), 0),
@@ -115,14 +121,15 @@ function render() {
     ? money(sorted[0][1])
     : "Este mes";
   $("#receipt-count").textContent = rows.filter((e) => e.photo).length;
-  $("#transactions").innerHTML = rows.length
-    ? rows
+  const matchingRows=rows.filter(e=>matchesSearch([e.merchant,e.category,e.date,e.payment,e.note,e.amount]));
+  $("#transactions").innerHTML = matchingRows.length
+    ? matchingRows
         .map(
           (e) =>
             `<div class="transaction"><div class="transaction-icon">${e.photo ? "▧" : "◈"}</div><div class="transaction-main"><strong>${safe(e.merchant)}</strong><small>${safe(e.category)} · ${safe(e.date)} · ${safe(e.payment)}</small></div><span class="transaction-amount">${money(e.amount)}</span><button class="edit" data-id="${safe(e.id)}" title="Editar gasto" aria-label="Editar gasto">Editar</button><button class="delete" data-id="${safe(e.id)}" title="Eliminar gasto" aria-label="Eliminar gasto">×</button></div>`,
         )
         .join("")
-    : '<div class="empty">Aún no tienes gastos registrados este mes.<br>Agrega tu primer comprobante para empezar.</div>';
+    : $("#movement-search").value.trim() ? '<div class="empty">No hay gastos que coincidan con la búsqueda.</div>' : '<div class="empty">Aún no tienes gastos registrados este mes.<br>Agrega tu primer comprobante para empezar.</div>';
   $("#categories").innerHTML = sorted.length
     ? sorted
         .map(
@@ -131,6 +138,7 @@ function render() {
         )
         .join("")
     : '<div class="empty">Tus categorías aparecerán aquí.</div>';
+  updateSafety();
   window.dispatchEvent(new Event("bap:render"));
 }
 function requireWrite() {
@@ -287,6 +295,7 @@ async function init() {
   }
 }
 $("#month").addEventListener("change", render);
+$("#movement-search").addEventListener("input", render);
 $("#currency-view").addEventListener("change", render);
 $("#expense-currency").addEventListener("change", () => window.BAP_FINANCE?.chooseCredit());
 $("#add").onclick = () => show();
@@ -390,7 +399,7 @@ async function saveExpense(e) {
     photo: photoData,
     credit_id: $("#expense-credit").value || null,
     owner_id: cloudUser?.id || null,
-    updated_at: new Date().toISOString(),
+    updated_at: expenseStamp(),
     dirty: true,
     deleted: false,
   };
@@ -437,26 +446,35 @@ $("#transactions").addEventListener("click", async (e) => {
   const purchaseError = window.BAP_FINANCE?.validateExpenseChange(item, null);
   if (purchaseError) return notice(purchaseError);
   if (!confirm("¿Eliminar este gasto y su foto?")) return;
-  if (cloudReady) {
-    item = {
-      ...item,
-      deleted: true,
-      dirty: true,
-      updated_at: new Date().toISOString(),
-    };
-    await put(item);
-    expenses = expenses.map((x) => (x.id === item.id ? item : x));
-    syncCloud();
-  } else {
-    await remove(item.id);
-    expenses = expenses.filter((x) => x.id !== item.id);
-  }
+  item={...item,deleted:true,dirty:true,updated_at:expenseStamp()};
+  try { await put(item); }
+  catch { return notice("No se pudo guardar la eliminación; el gasto se conserva."); }
+  expenses=expenses.map(e=>e.id===item.id ? item : e);
+  syncCloud();
   await window.BAP_FINANCE?.syncExpense({...item, deleted:true});
   render();
-  notice("Gasto eliminado.");
+  notice("Gasto enviado a la papelera; puedes recuperarlo en Reportes y respaldos.");
 });
 $("#excel").onclick = excel;
 $("#pdf").onclick = pdf;
+$("#expense-trash-list").onclick=async e=>{
+  const button=e.target.closest('[data-recover-expense]');if (!button || !requireWrite()) return;
+  const item=expenses.find(x=>x.id===button.dataset.recoverExpense && x.deleted && (!cloudReady || x.owner_id===cloudUser?.id));
+  if (!item) return;
+  const card=window.BAP_FINANCE?.cards().find(c=>c.id===item.credit_id);
+  if (item.credit_id && (!card || (card.data.currency || "PEN")!==(item.currency || "PEN"))) return notice("Recupera primero la tarjeta vinculada o revisa tu respaldo financiero.");
+  const restored={...item,deleted:false,dirty:true,updated_at:expenseStamp()};
+  const error=window.BAP_FINANCE?.validateExpenseChange(null,restored);if (error) return notice(error);
+  button.disabled=true;
+  try { await put(restored); expenses=await all();render();syncCloud();notice("Gasto recuperado. Si tenía cronograma, revisa su programación en Mis finanzas."); }
+  catch { notice("No se pudo recuperar el gasto; se conserva en la papelera.");button.disabled=false; }
+};
+$("#expense-checkpoint").onclick=async()=>{
+  if (cloudReady && !cloudUser) return notice("Inicia sesión para consultar tu copia previa.");
+  const copy=await window.BAP_SYNC.checkpoint(db,"expenses",cloudUser?.id || null);
+  if (!copy) return notice("No hay una restauración anterior con copia local disponible.");
+  download(new Blob([JSON.stringify({format:"bap-gastos-v1",exported:copy.exported,expenses:copy.rows})],{type:"application/json"}),`BAP_Gastos_antes_de_restaurar_${today()}.json`);
+};
 $("#backup").onclick = () => {
   if (cloudReady && !cloudUser)
     return notice("Inicia sesión para descargar tus gastos.");
@@ -503,12 +521,12 @@ $("#restore").onchange = async (e) => {
     if (
       data.format !== "bap-gastos-v1" ||
       !Array.isArray(data.expenses) ||
-      data.expenses.length > 50000
+      data.expenses.length > 50000 || new Set(data.expenses.map(r=>r.id)).size !== data.expenses.length
     )
       throw Error("Formato inválido");
     if (
       !confirm(
-        `¿Importar ${data.expenses.length} registros? Se conservarán los existentes y se actualizarán los ID coincidentes.`,
+        `¿Importar ${data.expenses.length} registros? Se actualizarán los ID coincidentes. Se guardará una copia local previa, descargable desde Reportes y respaldos.`,
       )
     )
       return;
@@ -520,7 +538,7 @@ $("#restore").onchange = async (e) => {
         ) ||
         !["PEN", "USD"].includes(item.currency ?? "PEN") ||
         typeof item.date !== "string" ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(item.date) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(item.date) || !Number.isFinite(Date.parse(item.date)) || new Date(item.date).toISOString().slice(0,10)!==item.date ||
         !Number.isFinite(Number(item.amount)) ||
         Number(item.amount) <= 0 ||
         typeof item.merchant !== "string" ||
@@ -543,22 +561,25 @@ $("#restore").onchange = async (e) => {
       const card = window.BAP_FINANCE?.cards().find(x => x.id === item.credit_id);
       if (!item.deleted && item.credit_id && (!card || (card.data.currency ?? "PEN") !== (item.currency ?? "PEN"))) throw Error("Tarjeta o moneda incompatible");
     }
-    for (let item of data.expenses) {
-      let entry = {
+    for (const item of data.expenses) {
+      const previous=expenses.find(x=>x.id===item.id);
+      const error=window.BAP_FINANCE?.validateExpenseChange(previous,item);
+      if (error) throw Error(error);
+    }
+    const restoredRows = data.expenses.map(item => ({
         ...item,
         owner_id: cloudUser?.id || null,
         dirty: true,
         deleted: !!item.deleted,
-        updated_at: new Date().toISOString(),
-      };
-      await put(entry);
-    }
+        updated_at: expenseStamp(),
+      }));
+    await window.BAP_SYNC.replaceWithCheckpoint(db,"expenses",cloudUser?.id || null,restoredRows);
     expenses = await all();
     render();
     syncCloud();
     notice("Respaldo restaurado.");
   } catch (err) {
-    notice("El archivo no es un respaldo válido de BAP Gastos.");
+    notice("No se restauró el archivo. Revisa su formato, la tarjeta vinculada, sus cronogramas y el espacio disponible; los datos anteriores se conservan.");
   } finally {
     e.target.value = "";
   }
@@ -571,6 +592,7 @@ window.BAP_APP = {
   state: () => ({
     user: cloudUser,
     configured: cloudReady,
+    syncing: syncing || syncQueued,
     demo: demoMode,
     cloud,
     currency: ledgerCurrency(),
@@ -579,6 +601,8 @@ window.BAP_APP = {
     ),
   }),
   notice,
+  updateSafety,
+  matchesSearch,
 };
 // Sincronización opcional: el navegador conserva una copia local y sube los cambios pendientes.
 const config = window.BAP_CLOUD_CONFIG || {};
@@ -650,7 +674,9 @@ async function initCloud() {
 }
 async function setUser(user) {
   const firstSession = !!user && cloudUser?.id !== user.id;
-  if (cloudUser?.id !== user?.id) stopRealtime();
+  if (cloudUser?.id !== user?.id) {
+    stopRealtime(); close(); $("#expense-form").reset(); photoData="";
+  }
   if (
     user &&
     localStorage.getItem("bap-gastos-owner") &&
@@ -760,7 +786,8 @@ function localRow(e) {
   };
 }
 async function syncCloud() {
-  if (!cloud || !cloudUser || syncing || !navigator.onLine) return;
+  if (!cloud || !cloudUser || !navigator.onLine) return;
+  if (syncing) { syncQueued=true; return; }
   syncing = true;
   updateAccount();
   let userId = cloudUser.id;
@@ -787,11 +814,7 @@ async function syncCloud() {
         .from("expenses")
         .upsert(remoteRow(entry), { onConflict: "id" });
       if (error) throw error;
-      let latest = expenses.find((e) => e.id === entry.id);
-      if (latest?.updated_at === entry.updated_at) {
-        latest.dirty = false;
-        await put(latest);
-      }
+      await window.BAP_SYNC.acknowledge(db,"expenses",entry);
     }
     await window.BAP_SYNC.pull({
       db,
@@ -822,6 +845,8 @@ async function syncCloud() {
   } finally {
     syncing = false;
     updateAccount();
+    updateSafety();
+    if (syncQueued) {syncQueued=false;syncCloud();}
   }
 }
 $("#delete-account").onclick = async () => {
@@ -862,6 +887,7 @@ $("#delete-account").onclick = async () => {
     }
     try {
       await window.BAP_SYNC.clearCursor(db, "expenses", owner);
+      await window.BAP_SYNC.clearCheckpoint(db,"expenses",owner);
     } catch {
       localError = true;
     }
@@ -1009,8 +1035,10 @@ $("#otp-form").onsubmit = async (event) => {
 };
 $("#sign-out").onclick = async () => {
   if (!cloud) return;
+  if ((expenses.some(e=>e.owner_id===cloudUser?.id && e.dirty) || window.BAP_FINANCE?.pendingCount()) && !confirm("Hay cambios pendientes de sincronizar. Se conservarán en este navegador, pero aún pueden faltar en tus otros dispositivos. ¿Cerrar sesión de todos modos?")) return;
   stopRealtime();
   await cloud.auth.signOut();
+  close(); $("#expense-form").reset(); photoData="";
   cloudUser = null;
   render();
   updateAccount();
