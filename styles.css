@@ -10,3 +10,6 @@
 .topactions {flex-wrap:wrap}
 .currency-picker {display:flex;align-items:center;gap:8px;font-size:12px;color:#607285}
 .currency-picker select {font:inherit;font-weight:600;color:#21394c;border:1px solid #dbe4eb;border-radius:10px;padding:12px 10px;background:#fff;min-height:44px;max-width:100%}
+
+
+.backup-password{width:min(480px,calc(100% - 32px));border:1px solid #ccd8e2;border-radius:16px;padding:24px;color:#172842}.backup-password::backdrop{background:rgba(15,30,48,.6)}.backup-password label{display:block;margin:16px 0}.backup-password input{display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:12px}.backup-password p{line-height:1.5}.backup-password [role=alert]{color:#a21d2e}

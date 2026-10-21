@@ -1162,37 +1162,26 @@
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
-  q("#finance-backup").onclick = () => {
+  q("#finance-backup").onclick = async () => {
     if (!allowed(false)) return;
-    download(
-      new Blob(
-        [
-          JSON.stringify(
-            {
-              format: "bap-finance-v1",
-              exported: new Date().toISOString(),
-              records: visible(),
-            },
-            null,
-            2,
-          ),
-        ],
-        { type: "application/json" },
-      ),
-      "BAP_Finanzas_" + day() + ".json",
-    );
+    try {
+      const protectedCopy=await window.BAP_BACKUP.seal({format:"bap-finance-v1",exported:new Date().toISOString(),records:visible()});
+      download(new Blob([JSON.stringify(protectedCopy)],{type:"application/json"}),"BAP_Finanzas_cifrado_"+day()+".json");
+    } catch(error) { notify(error.message); }
   };
   q("#finance-checkpoint").onclick=async()=>{
     if (!allowed(false)) return;
     const copy=await window.BAP_SYNC.checkpoint(db,"records",owner());
     if (!copy) return notify("No hay una restauración financiera anterior con copia local disponible.");
-    download(new Blob([JSON.stringify({format:"bap-finance-v1",exported:copy.exported,records:copy.rows})],{type:"application/json"}),"BAP_Finanzas_antes_de_restaurar_"+day()+".json");
+    try { download(new Blob([JSON.stringify(await window.BAP_BACKUP.seal({format:"bap-finance-v1",exported:copy.exported,records:copy.rows}))],{type:"application/json"}),"BAP_Finanzas_antes_de_restaurar_"+day()+".json"); } catch(error) { notify(error.message); }
   };
   q("#finance-restore").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file || !allowed()) return;
     try {
-      const backup = JSON.parse(await file.text());
+    const restoreOwner=owner();
+      const backup = await window.BAP_BACKUP.open(await file.text());
+    if (restoreOwner!==(owner())) throw Error("La sesión cambió. Inicia nuevamente la restauración.");
       if (
         backup.format !== "bap-finance-v1" ||
         !Array.isArray(backup.records) ||
@@ -1270,7 +1259,7 @@
       sync();
       notify("Respaldo financiero restaurado.");
     } catch (err) {
-      notify("El archivo no es un respaldo financiero válido.");
+      notify(err.message === "Operación cancelada." || err.message?.startsWith("Contraseña incorrecta") || err.message?.startsWith("La sesión cambió") ? err.message : "El archivo no es un respaldo financiero válido.");
     } finally {
       e.target.value = "";
     }

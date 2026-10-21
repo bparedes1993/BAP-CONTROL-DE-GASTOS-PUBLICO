@@ -473,31 +473,18 @@ $("#expense-checkpoint").onclick=async()=>{
   if (cloudReady && !cloudUser) return notice("Inicia sesión para consultar tu copia previa.");
   const copy=await window.BAP_SYNC.checkpoint(db,"expenses",cloudUser?.id || null);
   if (!copy) return notice("No hay una restauración anterior con copia local disponible.");
-  download(new Blob([JSON.stringify({format:"bap-gastos-v1",exported:copy.exported,expenses:copy.rows})],{type:"application/json"}),`BAP_Gastos_antes_de_restaurar_${today()}.json`);
+  try { download(new Blob([JSON.stringify(await window.BAP_BACKUP.seal({format:"bap-gastos-v1",exported:copy.exported,expenses:copy.rows}))],{type:"application/json"}),`BAP_Gastos_antes_de_restaurar_${today()}.json`); } catch(error) { notice(error.message); }
 };
-$("#backup").onclick = () => {
+$("#backup").onclick = async () => {
   if (cloudReady && !cloudUser)
     return notice("Inicia sesión para descargar tus gastos.");
   let records = cloudReady
     ? expenses.filter((e) => e.owner_id === cloudUser.id)
     : expenses;
-  download(
-    new Blob(
-      [
-        JSON.stringify(
-          {
-            format: "bap-gastos-v1",
-            exported: new Date().toISOString(),
-            expenses: records,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
-    ),
-    `BAP_Gastos_respaldo_${today()}.json`,
-  );
+  try {
+    const protectedCopy=await window.BAP_BACKUP.seal({format:"bap-gastos-v1",exported:new Date().toISOString(),expenses:records});
+    download(new Blob([JSON.stringify(protectedCopy)],{type:"application/json"}),`BAP_Gastos_cifrado_${today()}.json`);
+  } catch(error) { notice(error.message); }
 };
 $("#restore").onchange = async (e) => {
   let file = e.target.files[0];
@@ -517,7 +504,9 @@ $("#restore").onchange = async (e) => {
     return;
   }
   try {
-    let data = JSON.parse(await file.text());
+    const restoreOwner=cloudUser?.id || null;
+    let data = await window.BAP_BACKUP.open(await file.text());
+    if (restoreOwner!==(cloudUser?.id || null)) throw Error("La sesión cambió. Inicia nuevamente la restauración.");
     if (
       data.format !== "bap-gastos-v1" ||
       !Array.isArray(data.expenses) ||
@@ -579,7 +568,7 @@ $("#restore").onchange = async (e) => {
     syncCloud();
     notice("Respaldo restaurado.");
   } catch (err) {
-    notice("No se restauró el archivo. Revisa su formato, la tarjeta vinculada, sus cronogramas y el espacio disponible; los datos anteriores se conservan.");
+    notice(err.message === "Operación cancelada." || err.message?.startsWith("Contraseña incorrecta") || err.message?.startsWith("La sesión cambió") ? err.message : "No se restauró el archivo. Revisa su formato, la tarjeta vinculada, sus cronogramas y el espacio disponible; los datos anteriores se conservan.");
   } finally {
     e.target.value = "";
   }

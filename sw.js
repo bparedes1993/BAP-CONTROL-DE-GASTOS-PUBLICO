@@ -1,4 +1,4 @@
-const CACHE = "bap-recuperacion-v18";
+const CACHE = "bap-respaldo-v19";
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,6 +18,7 @@ const ASSETS = [
   "./supabase-client.js",
   "./print-report.js",
   "./sync-client.js",
+  "./backup-crypto.js",
 ];
 self.addEventListener("install", (event) =>
   event.waitUntil(

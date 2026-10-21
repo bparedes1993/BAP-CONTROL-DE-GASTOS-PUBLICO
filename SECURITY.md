@@ -1,5 +1,12 @@
 # Revisión técnica de seguridad y capacidad
 
+## Respaldos cifrados · 21/10/2026
+
+Las descargas de gastos, finanzas y copias previas se protegen con AES-256-GCM, sal aleatoria de 16 bytes, IV aleatorio de 12 bytes y PBKDF2-SHA256 de 600000 iteraciones. Contraseña mínima de 12 caracteres y confirmación al exportar. La contraseña solo vive en memoria, no se persiste ni se envía. No existe recuperación de contraseña. La importación conserva compatibilidad con JSON antiguos; autentica el archivo cifrado antes de validar o escribir registros. Pruebas automatizadas verifican recuperación, contraseña incorrecta, alteraciones, parámetros limitados y aleatoriedad.
+
+Este cambio no cifra IndexedDB, las copias internas, Excel ni los reportes. No demuestra que exista un respaldo completo del servidor. Ver RECOVERY.md para el procedimiento y las comprobaciones pendientes.
+
+
 ## Revisión de recuperación y uso diario · 21/10/2026
 
 Alcance: revisión del código publicado y pruebas aisladas de PostgreSQL, DOM e IndexedDB. No se ejecutaron ataques ni restauraciones contra datos reales de clientes. Las pruebas de RLS, autorización comercial y administración con MFA vuelven a ejecutarse; no equivalen a una comprobación de toda la configuración actual del proveedor ni a una certificación.
@@ -16,14 +23,14 @@ Alcance: revisión del código publicado y pruebas aisladas de PostgreSQL, DOM e
 
 Se conserva **una copia local previa a la última restauración por cuenta y por tipo de datos**. Puede descargarse en el formato JSON de gastos o finanzas para restaurarla mediante el flujo habitual, con confirmación. Las copias internas se excluyen de los registros sincronizados y los reportes, y se limpian junto con los datos locales al eliminar la cuenta. Solo se muestra/exporta la copia del propietario actual.
 
-La copia previa y la papelera dependen del mismo almacenamiento del navegador: **no reemplazan un respaldo externo ni un respaldo de la base del servicio**. Un error de cuota cancela la importación y conserva los datos anteriores. Los JSON descargados y las copias locales no están cifrados con una clave exclusiva del usuario; deben conservarse en dispositivos propios y protegidos. El borrado del almacenamiento puede eliminar copias locales y cambios no enviados.
+La copia previa y la papelera dependen del mismo almacenamiento del navegador: **no reemplazan un respaldo externo ni un respaldo de la base del servicio**. Un error de cuota cancela la importación y conserva los datos anteriores. Las copias locales siguen sin cifrado exclusivo; las nuevas descargas JSON se cifran con contraseña. Las exportaciones antiguas, Excel y reportes deben conservarse en dispositivos propios y protegidos. El borrado del almacenamiento puede eliminar copias locales y cambios no enviados.
 
 ### Prioridades que requieren validación adicional
 
 1. Verificar y ensayar la recuperación completa de la base del servicio en un entorno separado, con responsables, frecuencia, retención y tiempos de recuperación definidos.
 2. Probar dos cuentas y dos dispositivos reales, desconexión, reconexión y pérdida de sesión; la suite utiliza API/Auth simulados para no tocar datos de clientes.
 3. Revisar las cuentas administrativas, MFA, alertas del proveedor y exposición de credenciales mediante una evaluación operativa independiente. Los controles SQL actuales conservan propiedad por usuario y MFA administrativa.
-4. Evaluar cifrado de copias externas, historial recuperable de registros financieros y traslado de fotos a almacenamiento privado según el volumen. Evitar promesas de invulnerabilidad, recuperación ilimitada o capacidad no medida.
+4. Evaluar historial recuperable de registros financieros y traslado de fotos a almacenamiento privado según el volumen. Evitar promesas de invulnerabilidad, recuperación ilimitada o capacidad no medida.
 
 La evidencia automatizada incluye abortar una importación después de iniciar escrituras, aislamiento de la copia previa, limpieza de esa copia, confirmación tardía de envíos, recuperación local, importación desde los formularios, ocultación al cerrar sesión y búsqueda sin alterar totales.
 

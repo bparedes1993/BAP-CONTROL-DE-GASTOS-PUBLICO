@@ -366,7 +366,7 @@
             <button class="outline" id="finance-pdf">↓ Plan PDF</button
             ><button class="outline" id="finance-excel">↓ Finanzas Excel</button
             ><button class="outline" id="finance-backup">
-              ↓ Respaldo financiero</button
+              ↓ Respaldo financiero con contraseña</button
             ><label class="outline upload"
               >↑ Restaurar finanzas<input
                 id="finance-restore"
@@ -428,7 +428,7 @@
           <div class="export-actions">
             <button id="pdf" class="outline">↓ Reporte PDF</button
             ><button id="excel" class="outline">↓ Excel (.xlsx)</button
-            ><button id="backup" class="outline">↓ Respaldo JSON</button
+            ><button id="backup" class="outline">↓ Respaldo con contraseña</button
             ><label class="outline upload"
               >↑ Restaurar JSON<input
                 type="file"
@@ -441,7 +441,7 @@
         <section class="panel" aria-labelledby="safety-title">
           <h2 id="safety-title">Protege y recupera tus datos</h2>
           <p id="data-safety-status" role="status"></p>
-          <p>La sincronización y la papelera no sustituyen un respaldo. Descarga las copias de gastos y finanzas en un dispositivo propio; contienen información personal. Borrar los datos del navegador puede eliminar cambios aún no sincronizados y copias locales.</p>
+          <p>La sincronización y la papelera no sustituyen un respaldo. Descarga las copias de gastos y finanzas en un dispositivo propio; se cifran con la contraseña que elijas. Guarda esa contraseña: no podemos recuperarla. Las copias locales del navegador siguen sin cifrado exclusivo. Borrar los datos del navegador puede eliminar cambios aún no sincronizados y copias locales.</p>
           <div class="export-actions"><button class="outline" id="expense-checkpoint" type="button">↓ Gastos antes de la última restauración</button><button class="outline" id="finance-checkpoint" type="button">↓ Finanzas antes de la última restauración</button></div>
           <details id="expense-trash"><summary>Gastos eliminados · recuperar</summary><p>Se muestran hasta 50 gastos eliminados de tu cuenta. Recuperarlos vuelve a incluirlos en tus totales; revisa sus cronogramas si pagaste con crédito.</p><div id="expense-trash-list"></div></details>
         </section>
@@ -692,6 +692,7 @@
     <script src="xlsx.js" defer></script>
     <script src="finance-model.js" defer></script>
     <script src="sync-client.js" defer></script>
+    <script src="backup-crypto.js" defer></script>
     <script src="commercial.js" defer></script>
     <script src="checkout.js" defer></script>
     <script src="app.js" defer></script>

@@ -11,6 +11,7 @@ const scripts = await Promise.all(
     "xlsx.js",
     "finance-model.js",
     "sync-client.js",
+    "backup-crypto.js",
     "commercial.js",
     "checkout.js",
     "app.js",
@@ -558,6 +559,15 @@ assert.equal($("#total").textContent,totalBeforeSearch);
 assert.match($("#finance-incomes").textContent,/Ingreso ficticio/);
 assert(!$("#transactions").textContent.includes('Después del corte'));checks+=3;
 $("#movement-search").value='';$("#movement-search").dispatchEvent(new w.Event('input'));
+async function protectedDownload(action) {
+  const pending=action();
+  await wait(()=>w.document.querySelector('dialog input[name="password"]'));
+  const dialog=w.document.querySelector('dialog input[name="password"]').closest('dialog');
+  dialog.querySelector('[name=password]').value='Prueba segura 2026';
+  dialog.querySelector('[name=repeat]').value='Prueba segura 2026';
+  dialog.querySelector('form').dispatchEvent(new w.Event('submit',{cancelable:true}));
+  await pending;
+}
 // The import UI creates a downloadable checkpoint and rejects a bad file without partial changes.
 const importRow={id:'90000000-0000-4000-8000-000000000001',date:'2026-10-12',amount:7,currency:'PEN',merchant:'Importación de seguridad',category:'Otros',payment:'Efectivo',note:'',photo:'',credit_id:null,created:'2026-10-12T00:00:00Z'};
 async function restoreExpenses(rows){
@@ -567,7 +577,7 @@ async function restoreExpenses(rows){
 await restoreExpenses([importRow]);
 assert(w.BAP_APP.state().expenses.some(e=>e.id===importRow.id));checks++;
 const downloadBeforeCheckpoint=f.downloadCount();
-await $("#expense-checkpoint").onclick();assert.equal(f.downloadCount(),downloadBeforeCheckpoint+1);checks++;
+await protectedDownload(()=>$("#expense-checkpoint").onclick());assert.equal(f.downloadCount(),downloadBeforeCheckpoint+1);checks++;
 await restoreExpenses([{...importRow,id:'90000000-0000-4000-8000-000000000002'},{...importRow,id:'bad'}]);
 assert(!w.BAP_APP.state().expenses.some(e=>e.id==='90000000-0000-4000-8000-000000000002'));checks++;
 assert($("#data-safety-status").textContent.length>0);checks++;
@@ -575,8 +585,23 @@ const financialImport={id:'90000000-0000-4000-8000-000000000003',kind:'income',d
 const financeInput=$("#finance-restore");Object.defineProperty(financeInput,'files',{configurable:true,value:[{size:100,text:async()=>JSON.stringify({format:'bap-finance-v1',records:[financialImport]})}]});
 await financeInput.onchange({target:financeInput});
 assert($("#finance-incomes").textContent.includes('Ingreso restituido de prueba'));checks++;
-const financialCopyCount=f.downloadCount();await $("#finance-checkpoint").onclick();
+const financialCopyCount=f.downloadCount();await protectedDownload(()=>$("#finance-checkpoint").onclick());
 assert.equal(f.downloadCount(),financialCopyCount+1);checks++;
+
+// Encrypted restore uses the same validated, atomic import path.
+const encryptedRow={...importRow,id:'90000000-0000-4000-8000-000000000004',merchant:'Restauración cifrada'};
+const encryptedCopy=await w.BAP_BACKUP.encrypt({format:'bap-gastos-v1',expenses:[encryptedRow]},'Prueba segura 2026');
+async function encryptedRestore(pass){
+ const input=$("#restore");Object.defineProperty(input,'files',{configurable:true,value:[{size:100,text:async()=>JSON.stringify(encryptedCopy)}]});
+ const pending=input.onchange({target:input});
+ await wait(()=>w.document.querySelector('dialog input[name=password]'));
+ const dialog=w.document.querySelector('dialog input[name=password]').closest('dialog');
+ dialog.querySelector('input').value=pass;
+ dialog.querySelector('form').dispatchEvent(new w.Event('submit',{cancelable:true}));await pending;
+}
+const beforeBadRestore=JSON.stringify(w.BAP_APP.state().expenses);
+await encryptedRestore('Contraseña equivocada');assert.equal(JSON.stringify(w.BAP_APP.state().expenses),beforeBadRestore);checks++;
+await encryptedRestore('Prueba segura 2026');assert(w.BAP_APP.state().expenses.some(e=>e.id===encryptedRow.id));checks++;
 
 // Updating collection settings uses the current revision and doesn't approve a plan.
 f.set({is_admin:true,admin_verified:true});await w.BAP_ACCESS.refresh();
@@ -607,7 +632,7 @@ assert.equal(w.BAP_APP.state().expenses.length, recordsBefore);
 checks++;
 const countBefore = f.downloadCount();
 $("#finance-excel").click();
-$("#backup").click();
+await protectedDownload(()=>$("#backup").onclick());
 assert.equal(f.downloadCount(), countBefore + 2);
 checks++;
 const fakeWriteBefore = f.writeCount();
