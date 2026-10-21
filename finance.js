@@ -141,6 +141,57 @@
         .join("");
     if ([...el.options].some((o) => o.value === selected)) el.value = selected;
   }
+  let autoRunning = false, autoReadyOwner = null;
+  function validateExpenseChange(previous, next) {
+    if (next?.credit_id) {
+      const card = active().find((r) => r.id === next.credit_id);
+      if (card && next.date < card.data.date) return "La compra es anterior al saldo base de la tarjeta. Revisa la fecha base para evitar duplicarla en la deuda.";
+    }
+    if (!previous) return "";
+    const changed = !next || next.deleted || previous.amount !== next.amount || previous.date !== next.date || previous.credit_id !== next.credit_id;
+    if (!changed) return "";
+    const plans = active().filter((r) => r.data.schedule_only && r.data.expense_id === previous.id);
+    if (plans.some((p) => active().some((r) => r.kind === "payment" && r.data.schedule_id === p.id))) return "Esta compra tiene cuotas con pagos. Revisa y desvincula el cronograma antes de cambiar su importe, fecha, tarjeta o eliminarla; los pagos se conservan.";
+    if (plans.some((p) => !p.data.auto_purchase)) return "Esta compra tiene un cronograma manual. Revisa o elimina ese cronograma antes de cambiar la compra.";
+    return "";
+  }
+  async function syncExpense(expense) {
+    if (!db || !window.BAP_APP?.requireWrite()) return "";
+    const existing = active().find((r) => r.data.schedule_only && r.data.expense_id === expense.id);
+    if (!existing && state().cloud && owner() && autoReadyOwner !== owner()) return "Compra vinculada. Su programación se completará al sincronizar las finanzas.";
+    const card = active().find((r) => r.id === expense.credit_id && r.kind === "debt" && r.data.type === "card");
+    if (existing && !existing.data.auto_purchase) return "";
+    if (existing && active().some((r) => r.kind === "payment" && r.data.schedule_id === existing.id)) return "";
+    if (existing && (expense.deleted || !card)) {
+      await put({...existing, deleted:true, dirty:true, updated_at:nextStamp()});
+      records = await load(); render(); sync(); return "";
+    }
+    if (expense.deleted || !card || expense.date < card.data.date) return "";
+    if (M.currency(expense) !== M.currency(card.data)) return "La compra y la tarjeta deben tener la misma moneda.";
+    const paymentDay = card.data.payment_day ?? Number(card.data.due?.slice(8, 10));
+    const firstDue = M.cardDueDate(expense.date, card.data.cut, paymentDay);
+    if (!firstDue) return "Compra vinculada: configura el día de corte y el día de pago de la tarjeta para programarla automáticamente.";
+    // One deterministic UUID per purchase, shared by devices. Respect deleted schedules.
+    if (!existing && visible().some((r) => r.id === expense.id || (r.deleted && r.data.schedule_only && r.data.expense_id === expense.id))) return "";
+    const data = {name:expense.merchant || "Compra con tarjeta", date:expense.date, debt_id:card.id, expense_id:expense.id,
+      amount:expense.amount, currency:M.currency(card.data), schedule_only:true, auto_purchase:true,
+      installments:1, paid_before:0, first_due:firstDue, tea:0,
+      note:"Compra programada al corte; importe sin intereses, seguros ni comisiones."};
+    if (existing && JSON.stringify(existing.data) === JSON.stringify(data)) return "";
+    await save("charge", data, existing?.id || expense.id);
+    return "";
+  }
+  async function autoPurchases() {
+    if (autoRunning || !db || !window.BAP_ACCESS?.canWrite()) return;
+    autoRunning = true;
+    try {
+      for (const expense of state().expenses.filter((e) => !e.deleted && e.credit_id)) {
+        if (active().some((r) => r.data.schedule_only && r.data.expense_id === expense.id)) continue;
+        await syncExpense(expense);
+      }
+    } catch (error) { console.error("Programación de compras", error); }
+    finally { autoRunning = false; }
+  }
   async function attach() {
     if (!db) return;
     const s = state(),
@@ -149,6 +200,7 @@
       if (channel && s.cloud) s.cloud.removeChannel(channel);
       channel = null;
       connected = id;
+      autoReadyOwner = null;
       records = await load();
       if (id && s.cloud) {
         channel = s.cloud
@@ -175,6 +227,7 @@
         : "Solo en este dispositivo";
     }
     render();
+    if (!s.cloud || !id) autoPurchases();
   }
   async function sync() {
     const s = state();
@@ -244,6 +297,8 @@
       });
       if (owner() !== id) return;
       records = await load();
+      autoReadyOwner = id;
+      await autoPurchases();
       status = !window.BAP_ACCESS?.canWrite()
         ? "Solo lectura · consulta Mi acceso"
         : records.some((r) => r.owner_id === id && r.dirty)
@@ -439,7 +494,7 @@
         (
           p,
         ) => `<details class="installment-schedule"><summary>${esc(p.data.name)} · ${p.paidCount} pagadas / ${p.pendingCount} pendientes</summary>
-      <p class="finance-help">${p.data.installment_amount != null ? "Cuota bancaria ingresada; confirma intereses y cargos en tu estado de cuenta." : "Estimación: TEA fija convertida a tasa mensual, meses iguales; sin seguros ni comisiones."} ${p.data.paid_before ? "Incluye " + p.data.paid_before + " cuotas históricas declaradas, sin generar movimientos." : ""}</p>
+      <p class="finance-help">${p.data.auto_purchase ? "Compra programada por corte y día de pago. Solo incluye el importe de compra; revisa intereses, seguros, comisiones y cuotas con el banco." : p.data.installment_amount != null ? "Cuota bancaria ingresada; confirma intereses y cargos en tu estado de cuenta." : "Estimación: TEA fija convertida a tasa mensual, meses iguales; sin seguros ni comisiones."} ${p.data.paid_before ? "Incluye " + p.data.paid_before + " cuotas históricas declaradas, sin generar movimientos." : ""}</p>
       ${p.stale || p.invalid ? '<p class="finance-advice-item warning">Revisa este cronograma: la compra cambió, fue eliminada o los datos no son válidos.</p>' : ""}
       ${p.overpaid > 0 ? `<p class="finance-advice-item warning">Pagos que exceden el cronograma: ${fmt(p.overpaid)}. Concilia con el banco.</p>` : ""}
       <div class="installment-scroll"><table><caption>Cuotas de ${esc(p.data.name)}</caption><thead><tr><th>Cuota</th><th>Vence</th><th>Importe</th><th>Pagado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${p.items.map((i) => `<tr><td>${i.number}/${p.data.installments}</td><td>${esc(i.due)}</td><td>${fmt(i.amount)}</td><td>${fmt(i.paid)}</td><td>${fmt(i.remaining)}</td><td>${esc(i.status)}</td></tr>`).join("")}</tbody></table></div>
@@ -450,7 +505,7 @@
   function debtCard(d, isLoan) {
     const x = d.data,
       b = d.balance;
-    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">Saldo actual según tu registro · ${M.currency(x)}</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc(x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible según saldo" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
+    return `<article class="debt-card"><header><div><span class="eyebrow">${isLoan ? "POR COBRAR" : x.type === "card" ? "TARJETA DE CRÉDITO" : "PRÉSTAMO / DEUDA"}</span><h3>${esc(x.name)}</h3></div><span class="badge ${d.overdue ? "late" : ""}">${b === 0 ? "Sin saldo" : d.overdue ? "Revisar atraso" : "Activo"}</span></header><div class="balance">${fmt(b)}</div><small class="finance-help">${isLoan ? "Saldo por cobrar" : "Deuda pendiente"} según tu registro · ${M.currency(x)}</small><dl><div><dt>${isLoan ? "Fecha acordada" : "Próximo vencimiento"}</dt><dd>${esc((!isLoan && d.schedules?.flatMap((p) => p.items.filter((i) => i.remaining > 0).map((i) => i.due)).sort()[0]) || x.due || "Sin registrar")}</dd></div><div><dt>${isLoan ? "Cuota esperada" : "Cuota / mínimo mensual"}</dt><dd>${x.minimum == null ? "Sin registrar" : fmt(x.minimum)}</dd></div><div><dt>TEA registrada</dt><dd>${x.tea == null ? "Desconocida" : esc(x.tea) + "%"}</dd></div><div><dt>${x.type === "card" ? "Línea disponible (se reduce al comprar)" : "Saldo base"}</dt><dd>${x.type === "card" ? (x.limit ? fmt(Math.max(0, x.limit - b)) : "Sin límite registrado") : fmt(x.balance)}</dd></div>${x.type === "card" ? `<div><dt>Día de corte</dt><dd>${esc(x.cut || "Sin registrar")}</dd></div><div><dt>Día de pago</dt><dd>${esc(x.payment_day || (x.due ? Number(x.due.slice(8,10)) : "Sin registrar"))}</dd></div>` : ""}</dl>${!isLoan ? `<div class="installment-budget">${row("Compromiso del período (mínimo o cuotas, el mayor)", d.required)}${row("Presupuesto reservado", x.monthly_budget || 0)}${row("Objetivo mensual actualizado", d.monthlyTarget)}${x.monthly_budget != null && d.budgetGap > 0 ? `<p class="finance-help">Reserva ${fmt(d.budgetGap)} adicionales para cubrir el compromiso.</p>` : ""}<p class="finance-help">El mínimo no se suma otra vez a las cuotas. Si el estado de cuenta exige más, actualízalo. El presupuesto es una reserva, no un pago.</p></div>` : ""}<div class="debt-actions"><button class="primary" data-fin-action="payment" data-id="${esc(d.id)}">${isLoan ? "Registrar cobro" : "Registrar pago"}</button><button class="outline" data-fin-action="disbursement" data-id="${esc(d.id)}">${isLoan ? "Prestar más" : "Desembolso recibido"}</button>${isLoan ? "" : `<button class="outline" data-fin-action="charge" data-id="${esc(d.id)}">Interés / cargo</button>`}${!isLoan ? `<button class="outline" data-fin-action="schedule" data-id="${esc(d.id)}">${x.type === "card" ? "Programar compra registrada" : "Crear cronograma"}</button>` : ""}<button class="text-btn" data-fin-edit="${esc(d.id)}">Editar</button><button class="text-btn" data-fin-delete="${esc(d.id)}">Eliminar</button></div>${!isLoan ? scheduleView(d) : ""}</article>`;
   }
   function events(rows) {
     return (
@@ -713,10 +768,10 @@
               "number",
               d.cut,
               'min="1" max="31" step="1"',
-            )
+            ) + field("payment_day", "Día mensual de pago de la tarjeta", "number", d.payment_day ?? (d.due ? Number(d.due.slice(8,10)) : ""), 'min="1" max="31" step="1"')
           : "");
       help =
-        "El saldo base no genera un ingreso ni una salida de efectivo. Debe ser anterior a los movimientos del día base: la app suma compras/cargos/desembolsos y resta capital desde esa fecha, inclusive. Para conciliar, usa un saldo y fecha que no dupliquen movimientos. La TEA debe venir del contrato, no sustituirla por TCEA. Otros compromisos se suman a las cuotas; no incluyas ahí importes ya programados. El mínimo del banco es un piso, no se suma otra vez.";
+        "El saldo base no genera un ingreso ni una salida de efectivo. Debe ser anterior a los movimientos del día base: la app suma compras/cargos/desembolsos y resta capital desde esa fecha, inclusive. Para conciliar, usa un saldo y fecha que no dupliquen movimientos. La TEA debe venir del contrato, no sustituirla por TCEA. Otros compromisos se suman a las cuotas; no incluyas ahí importes ya programados. El mínimo del banco es un piso, no se suma otra vez. Configura corte y día mensual de pago para programar las compras. El corte incluye las compras de ese día; si el día de pago es menor o igual al corte, vence el mes siguiente. Se usa la fecha del gasto: ajústala si el banco contabiliza la compra en otro ciclo.";
     }
     if (["payment", "disbursement", "charge"].includes(kind)) {
       const debt = active().find((r) => r.id === context);
@@ -877,6 +932,7 @@
       "tea",
       "limit",
       "cut",
+      "payment_day",
       "income",
       "expenses",
       "reserve",
@@ -989,6 +1045,7 @@
         return (err.textContent =
           "El capital supera el saldo registrado. Revisa el saldo y movimientos.");
     }
+    if (data.payment_day === null) delete data.payment_day;
     if (data.name) data.name = data.name.trim();
     if (["income", "debt", "receivable"].includes(formKind) && !data.name)
       return (err.textContent = "Escribe un nombre o alias.");
@@ -1006,6 +1063,7 @@
           ? edit?.id || await budgetId(data.currency)
           : edit?.id;
       await save(formKind === "schedule" ? "charge" : formKind, data, id);
+      if (formKind === "debt") await autoPurchases();
       q("#finance-editor").close();
       notify("Registro financiero guardado.");
     } catch (e) {
@@ -1323,6 +1381,9 @@
   };
   window.BAP_FINANCE = {
     chooseCredit,
+    syncExpense,
+    validateExpenseChange,
+    sync,
     cards: () => active().filter(r => r.kind === "debt" && r.data.type === "card"),
     async clearOwner(id) {
       for (const r of records.filter((r) => r.owner_id === id))
@@ -1411,4 +1472,5 @@
     paintStatus();
   };
 })();
+
 

@@ -1,4 +1,4 @@
-const CACHE = "bap-sync-pagos-v16";
+const CACHE = "bap-compras-tarjeta-v17";
 const ASSETS = [
   "./",
   "./index.html",
@@ -60,6 +60,7 @@ self.addEventListener("fetch", (event) => {
     })(),
   );
 });
+
 
 
 

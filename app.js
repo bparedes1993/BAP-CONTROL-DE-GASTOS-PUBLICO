@@ -342,8 +342,24 @@ $("#scan").onclick = async () => {
     btn.disabled = false;
   }
 };
+$("#expense-credit").addEventListener("change", () => {
+  if ($("#expense-credit").value) $("#payment").value = "Tarjeta de crédito";
+});
+$("#payment").addEventListener("change", () => {
+  if ($("#payment").value === "Tarjeta de crédito") {
+    const options = [...$("#expense-credit").options].filter((o) => o.value);
+    if (options.length === 1) $("#expense-credit").value = options[0].value;
+  } else if ($("#payment").value !== "Tarjeta") $("#expense-credit").value = "";
+});
+let expenseSaving = false;
 $("#expense-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (expenseSaving) return;
+  expenseSaving = true;
+  try { await saveExpense(e); }
+  finally { expenseSaving = false; }
+});
+async function saveExpense(e) {
   let amount = Number($("#amount").value),
     date = $("#date").value;
   if (!requireWrite()) return;
@@ -381,12 +397,19 @@ $("#expense-form").addEventListener("submit", async (e) => {
   if (!["PEN", "USD"].includes(item.currency)) return notice("Selecciona soles o dólares.");
   const linkedCard = window.BAP_FINANCE?.cards().find(c => c.id === item.credit_id);
   if (item.credit_id && (!linkedCard || (linkedCard.data.currency ?? "PEN") !== item.currency)) return notice("El gasto y la tarjeta deben tener la misma moneda.");
+  if (item.credit_id) item.payment = "Tarjeta de crédito";
+  if (item.payment === "Tarjeta de crédito" && !item.credit_id) return notice("Selecciona la tarjeta de crédito en Origen del pago para actualizar su deuda y línea disponible.");
+  const purchaseError = window.BAP_FINANCE?.validateExpenseChange(original, item);
+  if (purchaseError) return notice(purchaseError);
   if (original && (original.currency ?? "PEN") !== item.currency) return notice("La moneda de un registro guardado se conserva.");
   if (!item.merchant) return notice("Escribe el comercio o la descripción.");
   try {
     await put(item);
     expenses = expenses.filter((x) => x.id !== item.id);
     expenses.push(item);
+    let scheduleNotice = "";
+    try { scheduleNotice = await window.BAP_FINANCE?.syncExpense(item) || ""; }
+    catch { scheduleNotice = "Gasto guardado; la programación está pendiente. Revisa la tarjeta y vuelve a abrir Mis finanzas."; }
     $("#month").value = date.slice(0, 7);
     $("#currency-view").value = item.currency;
     render();
@@ -396,11 +419,12 @@ $("#expense-form").addEventListener("submit", async (e) => {
         ? "Gasto guardado. Sincronizando…"
         : "Gasto guardado en este dispositivo.",
     );
+    if (scheduleNotice) notice(scheduleNotice);
     syncCloud();
   } catch (err) {
     notice("No se pudo guardar. Revisa el espacio disponible.");
   }
-});
+}
 $("#transactions").addEventListener("click", async (e) => {
   let btn = e.target.closest("[data-id]");
   if (!btn) return;
@@ -410,6 +434,8 @@ $("#transactions").addEventListener("click", async (e) => {
     show(item);
     return;
   }
+  const purchaseError = window.BAP_FINANCE?.validateExpenseChange(item, null);
+  if (purchaseError) return notice(purchaseError);
   if (!confirm("¿Eliminar este gasto y su foto?")) return;
   if (cloudReady) {
     item = {
@@ -425,6 +451,7 @@ $("#transactions").addEventListener("click", async (e) => {
     await remove(item.id);
     expenses = expenses.filter((x) => x.id !== item.id);
   }
+  await window.BAP_FINANCE?.syncExpense({...item, deleted:true});
   render();
   notice("Gasto eliminado.");
 });
@@ -786,6 +813,7 @@ async function syncCloud() {
     expenses = await all();
     render();
     updateAccount();
+    window.BAP_FINANCE?.sync();
   } catch (err) {
     console.error("Sync error", err);
     notice(
@@ -1001,3 +1029,4 @@ window.addEventListener("bap:access", () => {
   render();
   updateAccount();
 });
+

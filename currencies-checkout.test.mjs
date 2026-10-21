@@ -83,6 +83,14 @@ await denied(expenseSQL,[uuid(32),A,uuid(30),'PEN']);
 await denied("update public.expenses set currency='PEN' where id=$1",[uuid(31)]);
 await scalar(entrySQL+' returning id',[uuid(33),A,'charge',{...schedule,debt_id:uuid(30),expense_id:uuid(31),amount:100,installments:2}]);
 await denied(entrySQL,[uuid(34),A,'charge',{...schedule,debt_id:uuid(30),expense_id:uuid(31),amount:100,installments:2}]);
+// Automatic purchase metadata fits the deployed schema and is idempotent by purchase UUID.
+await db.query("update public.finance_entries set data=data || '{\"cut\":5,\"payment_day\":20}'::jsonb where id=$1",[uuid(30)]); checks++;
+await db.query(expenseSQL,[uuid(90),A,uuid(30),'USD']); checks++;
+const autoPurchase={...schedule,debt_id:uuid(30),expense_id:uuid(90),amount:100,installments:1,auto_purchase:true,first_due:'2026-11-20'};
+await scalar(entrySQL+' returning id',[uuid(90),A,'charge',autoPurchase]); checks++;
+await db.query("update public.finance_entries set data=$1 where id=$2",[autoPurchase,uuid(90)]); checks++;
+equal(await scalar("select count(*)::int from public.finance_entries where id=$1 and not deleted",[uuid(90)]),1);
+
 await denied(entrySQL,[uuid(34),A,'charge',{...schedule,debt_id:uuid(30),expense_id:uuid(31),amount:200,installments:2}]);
 await actor(ADMIN,'aal2'); equal(Number(await scalar('select count(*) from public.finance_entries')),0); equal(Number(await scalar('select count(*) from public.expenses')),0);
 await actor(B); await denied(entrySQL,[uuid(40),B,'payment',{...payment}]);
@@ -95,3 +103,4 @@ equal(await scalar("select (data->>'amount')::numeric from public.finance_entrie
 equal(Number(await scalar("select count(*) from pg_policies where policyname in ('bap_expenses_write_gate','bap_expenses_update_gate','bap_finance_write_gate','bap_finance_update_gate')")),4);
 await db.close();
 console.log(`Currencies and checkout security: ${checks} checks passed (isolated PostgreSQL; no production clients, QR or payments).`);
+

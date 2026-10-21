@@ -34,6 +34,12 @@
     ).getUTCDate();
     return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
   }
+  function cardDueDate(date, cut, paymentDay) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date || ![cut, paymentDay].every((n) => Number.isInteger(n) && n >= 1 && n <= 31)) return null;
+    let closing = dueDate(date.slice(0, 7) + "-" + String(cut).padStart(2, "0"), 0);
+    if (date > closing) closing = dueDate(closing.slice(0, 7) + "-" + String(cut).padStart(2, "0"), 1);
+    return dueDate(closing.slice(0, 7) + "-" + String(paymentDay).padStart(2, "0"), paymentDay <= cut ? 1 : 0);
+  }
   function scheduleItems(data) {
     const count = data.installments;
     if (!Number.isInteger(count) || count < 1 || count > 360)
@@ -581,6 +587,8 @@
     if (d.principal != null && d.principal > d.amount) return false;
     if (d.tea != null && d.tea > 2000) return false;
     if (d.debtPercent != null && d.debtPercent > 100) return false;
+    if (d.payment_day != null && (!Number.isInteger(d.payment_day) || d.payment_day < 1 || d.payment_day > 31)) return false;
+    if (d.auto_purchase != null && (r.kind !== "charge" || !d.schedule_only || d.auto_purchase !== true)) return false;
     if (d.cut != null && (!Number.isInteger(d.cut) || d.cut < 1 || d.cut > 31))
       return false;
     if (
@@ -644,10 +652,12 @@
     round,
     validRecord,
     dueDate,
+    cardDueDate,
     scheduleItems,
     schedules,
   };
   root.BAP_FINANCE_MODEL = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
+
 

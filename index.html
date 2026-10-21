@@ -644,6 +644,8 @@
             </select></label
           ><label
             >Método de pago<select id="payment">
+              <option>Tarjeta de débito</option>
+              <option>Tarjeta de crédito</option>
               <option>Tarjeta</option>
               <option>Efectivo</option>
               <option>Yape / Plin</option>
@@ -656,8 +658,7 @@
                 Efectivo / débito / transferencia
               </option></select
             ><small
-              >Si eliges crédito, la compra aumenta esa deuda y el efectivo sale
-              al registrar el pago.</small
+              >Selecciona la tarjeta de crédito para reducir su línea disponible y aumentar su deuda. Con corte y día de pago configurados se programa una cuota por el importe de la compra; ajusta las cuotas si el banco la financió. El efectivo sale al registrar el pago.</small
             ></label
           ><label class="wide"
             >Nota (opcional)<input
@@ -686,3 +687,4 @@
     <script src="finance.js" defer></script>
   </body>
 </html>
+

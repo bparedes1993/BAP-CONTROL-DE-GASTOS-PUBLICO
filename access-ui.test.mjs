@@ -498,6 +498,44 @@ $("#finance-advice").querySelector('[data-fin-delete]').click();
 await wait(() => !$("#finance-advice").textContent.includes('Posibles pagos duplicados'));
 assert.equal(w.document.querySelectorAll('#finance-debt-events .finance-event').length,2);
 checks++;
+// Card purchases consume the credit line and schedule automatically at cutoff boundaries.
+$("#currency-view").value="PEN";$("#currency-view").dispatchEvent(new w.Event('change'));
+w.document.querySelector('[data-fin-add="debt"]').click();
+await submitFinance({name:"Ciclo automático",type:"card",currency:"PEN",balance:0,date:"2026-10-01",minimum:0,tea:0,limit:1000,cut:5,payment_day:20});
+const autoCard=w.BAP_FINANCE.cards().find(r=>r.data.name==='Ciclo automático');
+assert.equal(autoCard.data.payment_day,20);checks++;
+async function purchase(name,date,amount) {
+ $("#add").click();$("#merchant").value=name;$("#amount").value=String(amount);$("#date").value=date;
+ $("#expense-credit").value=autoCard.id;$("#expense-credit").dispatchEvent(new w.Event('change'));
+ assert.equal($("#payment").value,'Tarjeta de crédito');checks++;
+ $("#expense-form").dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ $("#expense-form").dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ await wait(()=>!$("#editor").open);
+ return w.BAP_APP.state().expenses.find(e=>e.merchant===name);
+}
+const cutoffExpense=await purchase('En el corte','2026-10-05',100);
+const afterCutoffExpense=await purchase('Después del corte','2026-10-06',100);
+const cardView=()=>[...w.document.querySelectorAll('.debt-card')].find(el=>el.querySelector('h3')?.textContent==='Ciclo automático');
+assert.match(cardView().textContent,/2026-10-20/);assert.match(cardView().textContent,/2026-11-20/);
+assert.match(cardView().textContent,/800[.,]00/);assert.equal(cardView().querySelectorAll('.installment-schedule').length,2);checks+=4;
+await w.BAP_FINANCE.syncExpense(cutoffExpense);await w.BAP_ACCESS.refresh();w.dispatchEvent(new w.Event('bap:render'));
+assert.equal(cardView().querySelectorAll('.installment-schedule').length,2);checks++;
+w.document.querySelector(`#transactions .edit[data-id="${afterCutoffExpense.id}"]`).click();
+$("#amount").value='150';$("#expense-form").dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+await wait(()=>!$("#editor").open);
+assert.equal(cardView().querySelectorAll('.installment-schedule').length,2);assert.match(cardView().textContent,/750[.,]00/);checks+=2;
+cardView().querySelector('[data-fin-action="payment"]').click();
+await submitFinance({amount:100,principal:100,date:'2026-10-20',schedule_id:cutoffExpense.id});
+assert.match(cardView().textContent,/850[.,]00/);assert.match(cardView().textContent,/1 pagadas \/ 0 pendientes/);
+assert.match(w.BAP_FINANCE.validateExpenseChange(cutoffExpense,{...cutoffExpense,amount:999}),/pagos/);checks+=3;
+w.document.querySelector(`#transactions .delete[data-id="${afterCutoffExpense.id}"]`).click();
+await wait(()=>cardView().querySelectorAll('.installment-schedule').length===1);
+assert.match(cardView().textContent,/1[,.]000[.,]00/);checks++;
+// A schedule deleted by the user must not be recreated during reconciliation.
+cardView().querySelector('.installment-schedule [data-fin-delete]').click();
+await wait(()=>cardView().querySelectorAll('.installment-schedule').length===0);
+await w.BAP_FINANCE.syncExpense(cutoffExpense);
+assert.equal(cardView().querySelectorAll('.installment-schedule').length,0);checks++;
 // Updating collection settings uses the current revision and doesn't approve a plan.
 f.set({is_admin:true,admin_verified:true});await w.BAP_ACCESS.refresh();
 $("#payment-methods-load").click();
@@ -680,4 +718,5 @@ callback.dom.window.close();
 console.log(
   `Client integration: ${checks} checks passed (synthetic DOM and mock API).`,
 );
+
 
